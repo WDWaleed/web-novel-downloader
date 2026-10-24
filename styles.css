@@ -1,0 +1,38 @@
+/* Clean e-reader typography for LoLoBun web novels */
+@charset "UTF-8";
+
+body {
+    margin: 4%;
+    font-family: Georgia, "Times New Roman", serif;
+    line-height: 1.65;
+    text-align: justify;
+}
+
+h1 {
+    text-align: center;
+    font-size: 1.6em;
+    margin-top: 1.5em;
+    margin-bottom: 1.2em;
+    font-weight: bold;
+    page-break-before: always;
+    page-break-after: avoid;
+}
+
+p {
+    margin-top: 0;
+    margin-bottom: 0.6em;
+    text-indent: 1.5em;
+}
+
+/* First paragraph after heading has no indent */
+h1 + p {
+    text-indent: 0;
+}
+
+em {
+    font-style: italic;
+}
+
+strong {
+    font-weight: bold;
+}
