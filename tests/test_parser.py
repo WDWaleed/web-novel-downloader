@@ -1,176 +1,182 @@
 """
-Unit tests for the parser module.
+Unit tests for the Novelight parser module.
 """
 
 import unittest
 
 from parser import (
     Chapter,
-    extract_next_chapter_url,
+    ChapterMeta,
+    clean_chapter_content,
+    is_chapter_content_empty,
     normalize_title,
     parse_chapter,
+    parse_chapter_list,
+    parse_chapter_title,
 )
 
 
 class TestParser(unittest.TestCase):
-    def test_normalize_title_standard(self):
-        self.assertEqual(
-            normalize_title("Chapter 1: After Defeat and Capture, Som", 1),
-            "Chapter 1: After Defeat and Capture, Som",
+    def test_parse_chapter_title_standard(self):
+        vol, ch, title = parse_chapter_title(
+            "1 vol. 1 chapter - After defeat and capture, someone is pregnant"
         )
+        self.assertEqual(vol, 1)
+        self.assertEqual(ch, "1")
+        self.assertEqual(title, "After defeat and capture, someone is pregnant")
 
-    def test_normalize_title_bare_number(self):
-        self.assertEqual(
-            normalize_title("2  You're Awake? You're a Dad Now!", 2),
-            "Chapter 2: You're Awake? You're a Dad Now!",
+    def test_parse_chapter_title_no_space_dash(self):
+        vol, ch, title = parse_chapter_title("12 vol. 78 chapter -Gag")
+        self.assertEqual(vol, 12)
+        self.assertEqual(ch, "78")
+        self.assertEqual(title, "Gag")
+
+    def test_parse_chapter_title_sub_chapter(self):
+        vol, ch, title = parse_chapter_title(
+            "12 vol. 68.1 chapter - Silver Radiance of the Night (17)"
         )
+        self.assertEqual(vol, 12)
+        self.assertEqual(ch, "68.1")
+        self.assertEqual(title, "Silver Radiance of the Night (17)")
 
-    def test_normalize_title_with_colon_number(self):
-        self.assertEqual(
-            normalize_title("3: The Mysterious Encounter", 3),
-            "Chapter 3: The Mysterious Encounter",
+    def test_parse_chapter_title_no_subtitle(self):
+        vol, ch, title = parse_chapter_title("5 vol. 10 chapter")
+        self.assertEqual(vol, 5)
+        self.assertEqual(ch, "10")
+        self.assertEqual(title, "")
+
+    def test_parse_chapter_title_colon_separator(self):
+        vol, ch, title = parse_chapter_title("3 vol. 5 chapter: The Grand Arrival")
+        self.assertEqual(vol, 3)
+        self.assertEqual(ch, "5")
+        self.assertEqual(title, "The Grand Arrival")
+
+    def test_parse_chapter_title_fallback(self):
+        vol, ch, title = parse_chapter_title("Special Side Story: The Festival")
+        self.assertEqual(vol, 1)
+        self.assertEqual(ch, "1")
+        self.assertEqual(title, "Special Side Story: The Festival")
+
+    def test_chapter_meta_display_title(self):
+        meta_with_sub = ChapterMeta(
+            chapter_id="150473",
+            volume=9,
+            chapter_number="78",
+            title="Dragon Heroic Spirit (6)",
+            raw_title="9 vol. 78 chapter - Dragon Heroic Spirit (6)",
+            url="https://novelight.net/book/chapter/150473",
+            is_locked=False,
         )
+        self.assertEqual(meta_with_sub.display_title, "Vol. 9 Ch. 78 - Dragon Heroic Spirit (6)")
 
-    def test_normalize_title_abbreviation_and_dash(self):
-        self.assertEqual(
-            normalize_title("Ch. 4 - Shadows Fall", 4),
-            "Chapter 4: Shadows Fall",
+        meta_no_sub = ChapterMeta(
+            chapter_id="150474",
+            volume=1,
+            chapter_number="2",
+            title="",
+            raw_title="1 vol. 2 chapter",
+            url="https://novelight.net/book/chapter/150474",
+            is_locked=False,
         )
+        self.assertEqual(meta_no_sub.display_title, "Vol. 1 Ch. 2")
 
-    def test_normalize_title_number_only(self):
-        self.assertEqual(normalize_title("5", 5), "Chapter 5")
-
-    def test_normalize_title_no_number(self):
-        self.assertEqual(
-            normalize_title("Prologue to the Adventure", 1),
-            "Chapter 1: Prologue to the Adventure",
-        )
-
-    def test_normalize_title_empty(self):
-        self.assertEqual(normalize_title("", 7), "Chapter 7")
-        self.assertEqual(normalize_title("   ", 8), "Chapter 8")
-
-    def test_normalize_title_preserves_sequential_ordinal_on_reset(self):
-        self.assertEqual(
-            normalize_title("1 The Silver Dragon Lady Wants Me to Confess My Love", 196),
-            "Chapter 196: The Silver Dragon Lady Wants Me to Confess My Love",
-        )
-        self.assertEqual(
-            normalize_title("Chapter 2: This is a date!", 197),
-            "Chapter 197: This is a date!",
-        )
-
-    def test_parse_chapter_full_flow(self):
+    def test_parse_chapter_list(self):
         html = """
-        <!DOCTYPE html>
-        <html>
-        <head><title>Web Novel Chapter</title></head>
-        <body>
-            <div class="title">Chapter 1: The Beginning</div>
-            <div class="text-content-box">
-                <script>var tracker = 1;</script>
-                <style>.hide { display: none; }</style>
-                <div class="ads">Ad Banner Here</div>
-                <p>First paragraph of the story.</p>
-                <p> </p>
-                <p>Second paragraph with <em>emphasis</em>.</p>
-                <div class="footer">Page footer</div>
-            </div>
-        </body>
-        </html>
+        <div class="chapters">
+            <a href="/book/chapter/345262" class="chapter ">
+                <div class="title">12 vol. 78 chapter - <span>Gag</span></div>
+                <div class="chapter-info">
+                    <span class="cost"><i class="fa fa-lock"></i></span>
+                    <span class="author"><i class="fa fa-user"></i> Santos</span>
+                    <span class="date">25.10.2026</span>
+                </div>
+            </a>
+            <a href="/book/chapter/150473" class="chapter ">
+                <div class="title">1 vol. 1 chapter - <span>After defeat and capture</span></div>
+                <div class="chapter-info">
+                    <span class="author"><i class="fa fa-user"></i> Santos</span>
+                    <span class="date">20.08.2024</span>
+                </div>
+            </a>
+        </div>
         """
-        chapter = parse_chapter(html, ordinal=1)
+        chapters = parse_chapter_list(html)
+        self.assertEqual(len(chapters), 2)
+
+        # Chapter 1 (locked)
+        self.assertEqual(chapters[0].chapter_id, "345262")
+        self.assertEqual(chapters[0].volume, 12)
+        self.assertEqual(chapters[0].chapter_number, "78")
+        self.assertEqual(chapters[0].title, "Gag")
+        self.assertTrue(chapters[0].is_locked)
+        self.assertEqual(chapters[0].translator, "Santos")
+        self.assertEqual(chapters[0].date, "25.10.2026")
+
+        # Chapter 2 (unlocked)
+        self.assertEqual(chapters[1].chapter_id, "150473")
+        self.assertEqual(chapters[1].volume, 1)
+        self.assertEqual(chapters[1].chapter_number, "1")
+        self.assertEqual(chapters[1].title, "After defeat and capture")
+        self.assertFalse(chapters[1].is_locked)
+        self.assertEqual(chapters[1].url, "https://novelight.net/book/chapter/150473")
+
+    def test_clean_chapter_content(self):
+        content_html = """
+        <div class="chapter-text randomclass">
+            <div><strong>*Volume 1*</strong></div>
+            <div class="advertisment">
+                <script>var x = 1;</script>
+                <span>Ad content</span>
+            </div>
+            <div>In the damp and shadowy dungeon, Leon was bound.</div>
+            <div></div>
+            <div>   </div>
+            <div class="ad-banner">Banner</div>
+            <div>His shattered armor barely clung to his body.</div>
+        </div>
+        """
+        cleaned = clean_chapter_content(content_html)
+        self.assertIn("<p><strong>*Volume 1*</strong></p>", cleaned)
+        self.assertIn("<p>In the damp and shadowy dungeon, Leon was bound.</p>", cleaned)
+        self.assertIn("<p>His shattered armor barely clung to his body.</p>", cleaned)
+        self.assertNotIn("advertisment", cleaned)
+        self.assertNotIn("Ad content", cleaned)
+        self.assertNotIn("Banner", cleaned)
+        self.assertNotIn("var x = 1", cleaned)
+
+    def test_is_chapter_content_empty(self):
+        self.assertTrue(is_chapter_content_empty(""))
+        self.assertTrue(is_chapter_content_empty('<div class="chapter-text abc"></div>'))
+        self.assertTrue(
+            is_chapter_content_empty(
+                '<div class="chapter-text"><div class="advertisment"><script>1</script></div></div>'
+            )
+        )
+        self.assertFalse(
+            is_chapter_content_empty('<div class="chapter-text"><div>Some actual text</div></div>')
+        )
+
+    def test_parse_chapter_full(self):
+        meta = ChapterMeta(
+            chapter_id="150473",
+            volume=1,
+            chapter_number="1",
+            title="After defeat",
+            raw_title="1 vol. 1 chapter - After defeat",
+            url="https://novelight.net/book/chapter/150473",
+            is_locked=False,
+        )
+        content_html = '<div class="chapter-text"><div>The heroic warrior fell.</div></div>'
+        chapter = parse_chapter(content_html, meta=meta, ordinal=1)
+
         self.assertIsInstance(chapter, Chapter)
+        self.assertEqual(chapter.ordinal, 1)
         self.assertEqual(chapter.number, 1)
-        self.assertEqual(chapter.raw_title, "Chapter 1: The Beginning")
-        self.assertEqual(chapter.display_title, "Chapter 1: The Beginning")
-        self.assertIn("<p>First paragraph of the story.</p>", chapter.body_html)
-        self.assertIn("<p>Second paragraph with <em>emphasis</em>.</p>", chapter.body_html)
-        # Ensure junk was removed
-        self.assertNotIn("tracker", chapter.body_html)
-        self.assertNotIn("Ad Banner Here", chapter.body_html)
-        self.assertNotIn("Page footer", chapter.body_html)
-
-    def test_parse_chapter_missing_content_box(self):
-        html = "<html><body><div class='title'>Chapter 1</div></body></html>"
-        with self.assertRaises(ValueError):
-            parse_chapter(html, ordinal=1)
-
-    def test_parse_chapter_br_fallback(self):
-        html = """
-        <html>
-        <body>
-            <div class="title">2 A New Path</div>
-            <div class="text-content-box">
-                Line 1 of novel<br>
-                Line 2 of novel<br>
-            </div>
-        </body>
-        </html>
-        """
-        chapter = parse_chapter(html, ordinal=2)
-        self.assertEqual(chapter.display_title, "Chapter 2: A New Path")
-        self.assertIn("<p>Line 1 of novel</p>", chapter.body_html)
-        self.assertIn("<p>Line 2 of novel</p>", chapter.body_html)
-
-
-    def test_extract_next_chapter_url_from_bottom_open_next_btn(self):
-        html = """
-        <div class="btn next" id="bottom-open-next-btn">
-            <a href="/n/5320155/7173996" name="next">Next episode</a>
-            <img class="next-icon" src="/image/reader/icon_next_chapter.png" alt="prev icon" />
-        </div>
-        """
-        next_url = extract_next_chapter_url(html)
-        self.assertEqual(next_url, "https://www.lolobun.com/n/5320155/7173996")
-
-    def test_extract_next_chapter_url_absolute(self):
-        html = """
-        <div class="btn next" id="bottom-open-next-btn">
-            <a href="https://www.lolobun.com/n/5320155/7173996" name="next">Next episode</a>
-        </div>
-        """
-        next_url = extract_next_chapter_url(html)
-        self.assertEqual(next_url, "https://www.lolobun.com/n/5320155/7173996")
-
-    def test_extract_next_chapter_url_missing(self):
-        html = "<div>No next link here</div>"
-        self.assertIsNone(extract_next_chapter_url(html))
-
-    def test_extract_next_chapter_url_invalid_href(self):
-        html = """
-        <div class="btn next" id="bottom-open-next-btn">
-            <a href="javascript:void(0)" name="next">Next episode</a>
-        </div>
-        """
-        self.assertIsNone(extract_next_chapter_url(html))
-
-        html_hash = """
-        <div class="btn next" id="bottom-open-next-btn">
-            <a href="#" name="next">Next episode</a>
-        </div>
-        """
-        self.assertIsNone(extract_next_chapter_url(html_hash))
-
-    def test_parse_chapter_includes_next_url(self):
-        html = """
-        <html>
-        <body>
-            <div class="title">Chapter 5: Turning Point</div>
-            <div class="text-content-box">
-                <p>The fifth chapter content.</p>
-            </div>
-            <div class="btn next" id="bottom-open-next-btn">
-                <a href="/n/5320155/7173996" name="next">Next episode</a>
-                <img class="next-icon" src="/image/reader/icon_next_chapter.png" alt="prev icon" />
-            </div>
-        </body>
-        </html>
-        """
-        chapter = parse_chapter(html, ordinal=5, base_url="https://www.lolobun.com/n/5320155/7173973")
-        self.assertEqual(chapter.next_url, "https://www.lolobun.com/n/5320155/7173996")
+        self.assertEqual(chapter.volume, 1)
+        self.assertEqual(chapter.chapter_number, "1")
+        self.assertEqual(chapter.display_title, "Vol. 1 Ch. 1 - After defeat")
+        self.assertEqual(chapter.body_html, "<p>The heroic warrior fell.</p>")
 
 
 if __name__ == "__main__":
     unittest.main()
-

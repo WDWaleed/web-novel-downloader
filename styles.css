@@ -1,4 +1,4 @@
-/* Clean e-reader typography for LoLoBun web novels */
+/* Clean e-reader typography for Novelight web novels */
 @charset "UTF-8";
 
 body {
@@ -8,9 +8,31 @@ body {
     text-align: justify;
 }
 
+/* Volume title separator page */
+h1.volume-title {
+    page-break-before: always;
+    text-align: center;
+    font-size: 2.0em;
+    margin-top: 35%;
+    margin-bottom: 2em;
+    font-weight: bold;
+}
+
+/* Flat chapter title */
 h1 {
     text-align: center;
     font-size: 1.6em;
+    margin-top: 1.5em;
+    margin-bottom: 1.2em;
+    font-weight: bold;
+    page-break-before: always;
+    page-break-after: avoid;
+}
+
+/* Nested volume chapter heading */
+h2 {
+    text-align: center;
+    font-size: 1.4em;
     margin-top: 1.5em;
     margin-bottom: 1.2em;
     font-weight: bold;
@@ -25,7 +47,7 @@ p {
 }
 
 /* First paragraph after heading has no indent */
-h1 + p {
+h1 + p, h2 + p {
     text-indent: 0;
 }
 

@@ -1,37 +1,30 @@
-# 📖 LoLoBun Web Novel Scraper → EPUB
+# 📖 Novelight Web Novel Scraper → EPUB
 
-A robust, configurable Python CLI tool that scrapes web novel chapters from `lolobun.com`, cleans junk markup, formats chapter titles consistently, and compiles them into a clean, beautifully styled EPUB3 using Pandoc.
+A robust, configurable Python CLI tool that downloads web novel chapters from `novelight.net`, cleans junk markup and advertisements, normalizes volume and chapter hierarchies, and compiles them into a clean, beautifully styled multi-volume EPUB3 using Pandoc.
 
 ---
 
 ## ✨ Features
 
-- **Dynamic Chapter Traversal**: Automatically discovers and follows each chapter's "Next episode" link (`div#bottom-open-next-btn a`), reliably handling non-sequential and non-linear database chapter IDs.
+- **Single-Call API Indexing**: Fetches the full chapter catalog (1,300+ chapters) in a single request via Novelight's pagination API.
+- **Paywall / Lock Filtering**: Automatically identifies free vs. locked/premium chapters using `<span class="cost">` indicators (`--free-only`).
+- **Volume & Chapter Hierarchy**:
+  - Organizes downloaded files into volume subdirectories (`output/chapters/vol_01/chapter_0001.html`).
+  - Inserts volume title pages (`<h1>Volume N</h1>`) and chapter headings (`<h2>`).
+  - Generates a 2-level nested Table of Contents in the EPUB (**Volume** → **Chapters**).
+- **Direct JSON Content Extraction**: Downloads chapter prose directly from Novelight's JSON API (`/book/ajax/read-chapter/{id}`) with clean markup and automatic ad removal (`.advertisment`).
 - **Resilient HTTP Fetching**:
-  - Realistic `User-Agent` and headers.
   - Automatic retries on transient errors (`429 Too Many Requests`, `5xx Server Errors`, connection drops).
-  - Exponential backoff and polite rate-limiting with randomized jitter.
-- **Smart HTML Cleaning & Parsing**:
-  - Extracts titles and prose paragraphs from `div.title` and `div.text-content-box`.
-  - Removes intrusive scripts, styles, and advertisements.
-  - Unifies inconsistent chapter title formats (`"Chapter 1: ..."` vs `"2 ..."`).
-- **Pandoc EPUB3 Compilation**:
-  - Automatically generates an interactive Table of Contents (TOC).
-  - Includes book metadata (title, author, language).
-  - Uses an elegant e-reader stylesheet (`styles.css`) for readability.
-  - Supports custom cover images (`--cover`).
+  - Polite rate-limiting with randomized jitter.
 - **Resume & Caching**:
   - Checks for existing downloaded chapters on disk and skips re-downloading them.
-  - Caches next-chapter URL metadata to seamlessly resume subsequent downloads without extra network requests.
-  - Can re-compile existing chapters into an EPUB at any time without fetching (`--build-only`).
+  - Recompiles existing chapters into an EPUB at any time without fetching (`--build-only`).
 - **Graceful Interruption**:
-  - Pressing `Ctrl+C` safely halts scraping and compiles whatever chapters have been downloaded so far.
+  - Pressing `Ctrl+C` safely halts scraping and compiles whatever chapters have been downloaded so far into EPUB.
 - **Rich Terminal UI**:
-  - Coloured, formatted log output via `rich`.
-  - Live progress bar with spinner, chapter count, elapsed time, and ETA.
-  - Real-time status column showing the current chapter's **endpoint ID** (the numeric URL segment, e.g. `7173996`).
-  - Chapter download summary table (chapter #, endpoint, title, status) printed after the scrape.
-  - Styled success and error panels.
+  - Live progress bar with chapter counts, volume/chapter indicators, elapsed time, and ETA.
+  - Windows console encoding safety (prevents `UnicodeEncodeError` on cp1252 consoles).
+  - Chapter list preview mode (`--list-only`) to inspect chapters without downloading.
 
 ---
 
@@ -43,7 +36,7 @@ Pandoc is required to generate the EPUB files:
   ```powershell
   winget install --id JohnMacFarlane.Pandoc
   ```
-  Or download the installer from [pandoc.org](https://pandoc.org/installing.html).
+  Or download from [pandoc.org](https://pandoc.org/installing.html).
 - **macOS**: `brew install pandoc`
 - **Linux**: `sudo apt install pandoc`
 
@@ -52,7 +45,7 @@ Requires **Python 3.10+**.
 
 ```powershell
 # Clone or navigate to the project directory
-cd d:\projects\lolobun_scrapper
+cd "d:\Web Dev Projects\25_LoLoBun Scraper"
 
 # Create a virtual environment
 python -m venv .venv
@@ -67,7 +60,12 @@ pip install -r requirements.txt
 ## 🛠️ Usage
 
 ### Quick Start
-Scrape the default novel configured in `config.py`:
+Preview all available chapters without downloading:
+```powershell
+python scraper.py --list-only
+```
+
+Download all available free chapters and build the EPUB:
 ```powershell
 python scraper.py
 ```
@@ -76,51 +74,59 @@ python scraper.py
 
 | Argument | Shorthand | Default | Description |
 |---|---|---|---|
-| `--novel-id` | | `5320155` | Novel ID on lolobun.com |
-| `--first-chapter-id` | | `7173977` | First chapter's numeric ID (for initial URL) |
-| `--start-url` | | `None` | Direct URL to start scraping from (overrides novel and chapter IDs) |
-| `--start` | `-s` | `1` | Starting chapter ordinal (1-based) |
-| `--chapters` | `-n` | `50` | Number of chapters to scrape |
-| `--delay` | `-d` | `2.0` | Seconds delay between requests |
+| `--book-id` | `--novel-id` | `337` | Book ID on novelight.net |
+| `--free-only` | | `True` | Only download free (unlocked) chapters |
+| `--include-locked` | | `False` | Attempt to download locked chapters as well |
+| `--volumes` | | `None` | Comma-separated volume numbers to download (e.g. `1,2,3`) |
+| `--start-chapter` | `--start`, `-s` | `1` | 1-based start offset in the filtered chapter list |
+| `--max-chapters` | `--chapters`, `-n` | `0` | Max chapters to download (`0` = all available) |
+| `--delay` | `-d` | `2.0` | Base seconds delay between requests |
 | `--jitter` | | `0.5` | Random variance (+/- seconds) applied to delay |
-| `--title` | | `"My Web Novel"` | Book title metadata in EPUB |
-| `--author` | | `"Unknown Author"`| Book author metadata in EPUB |
-| `--output-dir` | `-o` | `output` | Directory where files are stored |
-| `--epub-filename` | | `novel.epub` | Filename of generated EPUB |
+| `--title` | | `"Shut Up, Malevolent Dragon!..."` | Book title metadata in EPUB |
+| `--author` | | `"Unknown"` | Book author metadata in EPUB |
+| `--output-dir` | `-o` | `output` | Directory where files and EPUB are stored |
+| `--epub-filename` | | `shut_up_malevolent_dragon.epub` | Filename of generated EPUB |
 | `--cover` | | `None` | Path to book cover image (`.jpg` or `.png`) |
 | `--css` | | `styles.css` | Path to custom stylesheet |
 | `--force` | | `False` | Re-download chapters even if cached on disk |
 | `--build-only` | | `False` | Skip scraping; build EPUB from existing chapter files |
 | `--no-epub` | | `False` | Scrape and save HTML chapters without building EPUB |
+| `--list-only` | | `False` | Fetch and display the chapter index table, then exit |
 | `--verbose` | `-v` | `False` | Enable debug log output |
+
+---
 
 ### Examples
 
-#### Scrape a specific range (e.g., Chapters 1 to 20):
+#### List first 20 chapters:
 ```powershell
-python scraper.py --start 1 --chapters 20 --title "After Defeat and Capture" --author "Author Name"
+python scraper.py --list-only --max-chapters 20
 ```
 
-#### Scrape starting from a specific chapter URL:
+#### Download only Volume 1:
 ```powershell
-python scraper.py --start-url "https://www.lolobun.com/n/5320155/7173996" --chapters 15
+python scraper.py --volumes 1
 ```
 
-#### Resume a download:
-If your download was interrupted or you want to fetch more chapters:
+#### Download Volumes 1 through 3:
 ```powershell
-# Chapters 1-10 are already cached; scraper will fetch chapters 11-30 and combine all 1-30 into EPUB:
-python scraper.py --start 1 --chapters 30
+python scraper.py --volumes 1,2,3
 ```
 
-#### Rebuild EPUB from already downloaded chapters:
+#### Download a batch of 50 chapters starting from chapter 10:
 ```powershell
-python scraper.py --build-only --title "Updated Title"
+python scraper.py --start-chapter 10 --max-chapters 50
 ```
 
-#### Add a cover image:
+#### Resume an interrupted download:
+Cached chapters are automatically detected on disk and skipped:
 ```powershell
-python scraper.py --cover cover.jpg
+python scraper.py
+```
+
+#### Rebuild EPUB from existing downloaded chapters:
+```powershell
+python scraper.py --build-only
 ```
 
 ---
@@ -128,22 +134,22 @@ python scraper.py --cover cover.jpg
 ## 📂 Project Structure
 
 ```
-lolobun_scraper/
-├── config.py           # Module-level defaults and knobs
-├── fetcher.py          # HTTP requests, session management, exponential backoff
-├── parser.py           # BeautifulSoup chapter parser and title normalizer
-├── epub_builder.py     # Pandoc EPUB3 compiler with TOC & metadata
+novelight_scraper/
+├── config.py           # Module-level defaults and target novel configuration
+├── fetcher.py          # HTTP and JSON requests, retry backoff, and rate limiting
+├── parser.py           # HTML and JSON parser, ad remover, and Chapter data models
+├── epub_builder.py     # Pandoc EPUB3 compiler with volume-nested TOC
 ├── scraper.py          # CLI entry point, argument parsing, Rich progress & logging
-├── styles.css          # E-reader CSS styling for EPUB typography
+├── styles.css          # E-reader CSS styling for EPUB typography and volume headers
 ├── requirements.txt    # Python dependencies
-├── tests/              # Automated unit tests
+├── tests/              # Automated unit tests (30 tests)
 │   ├── test_fetcher.py
 │   ├── test_parser.py
 │   ├── test_epub_builder.py
 │   └── test_scraper.py
 └── output/             # (Ignored in git)
-    ├── chapters/       # Intermediate chapter HTML files (chapter_0001.html, etc.)
-    └── novel.epub      # Final assembled EPUB book
+    ├── chapters/       # Volume-organized chapter HTML files (vol_01/chapter_0001.html)
+    └── shut_up_malevolent_dragon.epub
 ```
 
 ---

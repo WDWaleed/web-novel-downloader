@@ -1,15 +1,18 @@
 """
 HTTP fetching module with retry logic, exponential backoff, and rate limiting.
+Supports both standard HTML page fetching and AJAX JSON fetching.
 """
 
 import logging
 import random
 import time
-from typing import Optional
+from typing import Any, Optional
 
 import requests
 
 from config import (
+    AJAX_HEADERS,
+    DEFAULT_HEADERS,
     MAX_RETRIES,
     REQUEST_DELAY,
     REQUEST_JITTER,
@@ -24,15 +27,11 @@ _default_session: Optional[requests.Session] = None
 
 
 def get_default_session() -> requests.Session:
-    """Return a shared requests.Session configured with user-agent headers."""
+    """Return a shared requests.Session configured with default headers."""
     global _default_session
     if _default_session is None:
         _default_session = requests.Session()
-        _default_session.headers.update({
-            "User-Agent": USER_AGENT,
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9",
-        })
+        _default_session.headers.update(DEFAULT_HEADERS)
     return _default_session
 
 
@@ -49,32 +48,27 @@ def sleep_with_jitter(base_delay: float = REQUEST_DELAY, jitter: float = REQUEST
     return actual_delay
 
 
-def fetch_page(
+def _get_with_retry(
     url: str,
+    params: Optional[dict[str, Any]] = None,
+    headers: Optional[dict[str, str]] = None,
     session: Optional[requests.Session] = None,
     timeout: int = REQUEST_TIMEOUT,
     max_retries: int = MAX_RETRIES,
     retry_backoff: float = RETRY_BACKOFF,
-) -> str:
+) -> requests.Response:
     """
-    Fetch a single URL, returning the page HTML as text.
-    Retries on transient HTTP errors (429, 5xx) and connection/timeout errors.
-
-    Raises:
-        requests.exceptions.HTTPError: On non-retryable HTTP errors (e.g., 404).
-        RuntimeError: If all retry attempts fail.
+    Execute GET request with retries on transient errors (429, 5xx) and network drops.
     """
     client = session or get_default_session()
 
     for attempt in range(1, max_retries + 1):
         try:
             logger.debug("GET %s (attempt %d/%d)", url, attempt, max_retries)
-            resp = client.get(url, timeout=timeout)
+            resp = client.get(url, params=params, headers=headers, timeout=timeout)
             resp.raise_for_status()
-
-            # Ensure UTF-8 decoding for proper character handling
             resp.encoding = "utf-8"
-            return resp.text
+            return resp
 
         except requests.exceptions.HTTPError as exc:
             status = exc.response.status_code if exc.response is not None else None
@@ -117,3 +111,56 @@ def fetch_page(
                 ) from exc
 
     raise RuntimeError(f"Failed to fetch {url} after {max_retries} attempts.")
+
+
+def fetch_page(
+    url: str,
+    params: Optional[dict[str, Any]] = None,
+    headers: Optional[dict[str, str]] = None,
+    session: Optional[requests.Session] = None,
+    timeout: int = REQUEST_TIMEOUT,
+    max_retries: int = MAX_RETRIES,
+    retry_backoff: float = RETRY_BACKOFF,
+) -> str:
+    """
+    Fetch a single URL, returning the page HTML as text.
+    """
+    resp = _get_with_retry(
+        url=url,
+        params=params,
+        headers=headers,
+        session=session,
+        timeout=timeout,
+        max_retries=max_retries,
+        retry_backoff=retry_backoff,
+    )
+    return resp.text
+
+
+def fetch_json(
+    url: str,
+    params: Optional[dict[str, Any]] = None,
+    headers: Optional[dict[str, str]] = None,
+    session: Optional[requests.Session] = None,
+    timeout: int = REQUEST_TIMEOUT,
+    max_retries: int = MAX_RETRIES,
+    retry_backoff: float = RETRY_BACKOFF,
+) -> dict[str, Any]:
+    """
+    Fetch a URL expecting a JSON response.
+    Includes AJAX headers (X-Requested-With: XMLHttpRequest) by default.
+    """
+    req_headers = dict(AJAX_HEADERS)
+    if headers:
+        req_headers.update(headers)
+
+    resp = _get_with_retry(
+        url=url,
+        params=params,
+        headers=req_headers,
+        session=session,
+        timeout=timeout,
+        max_retries=max_retries,
+        retry_backoff=retry_backoff,
+    )
+    return resp.json()

@@ -1,6 +1,6 @@
 """
 EPUB assembly module using Pandoc (via pypandoc).
-Compiles cleaned HTML chapters into a polished EPUB3 document.
+Compiles cleaned HTML chapters into a polished EPUB3 document with volume-aware nested TOC.
 """
 
 import glob
@@ -24,8 +24,20 @@ from parser import Chapter, normalize_title
 logger = logging.getLogger(__name__)
 
 
-def get_chapter_filepath(chapter_number: int, output_dir: str = CHAPTERS_DIR) -> str:
-    """Return the standard file path for a chapter HTML file."""
+def get_chapter_filepath(
+    chapter_number: int,
+    volume: Optional[int] = None,
+    output_dir: str = CHAPTERS_DIR,
+) -> str:
+    """
+    Return the standard file path for a chapter HTML file.
+    If volume is provided (> 0), nests inside a vol_XX subdirectory.
+    """
+    if volume is not None and volume > 0:
+        vol_dir = os.path.join(output_dir, f"vol_{volume:02d}")
+        filename = f"chapter_{chapter_number:04d}.html"
+        return os.path.join(vol_dir, filename)
+
     filename = f"chapter_{chapter_number:04d}.html"
     return os.path.join(output_dir, filename)
 
@@ -40,7 +52,10 @@ def extract_next_url_from_file(filepath: str) -> Optional[str]:
     try:
         with open(filepath, "r", encoding="utf-8") as f:
             content = f.read(4096)
-        match = re.search(r'<meta\s+name=["\']next-chapter-url["\']\s+content=["\']([^"\']+)["\']', content)
+        match = re.search(
+            r'<meta\s+name=["\']next-chapter-url["\']\s+content=["\']([^"\']+)["\']',
+            content,
+        )
         if match:
             url = match.group(1).strip()
             return url if url else None
@@ -49,10 +64,40 @@ def extract_next_url_from_file(filepath: str) -> Optional[str]:
     return None
 
 
+def create_volume_title_page(
+    volume: int,
+    output_dir: str = CHAPTERS_DIR,
+    lang: str = BOOK_LANGUAGE,
+) -> str:
+    """
+    Generate an HTML title page for a volume (<h1>Volume {volume}</h1>).
+    This establishes the top-level section for Pandoc's nested TOC.
+    """
+    vol_dir = os.path.join(output_dir, f"vol_{volume:02d}")
+    os.makedirs(vol_dir, exist_ok=True)
+    filepath = os.path.join(vol_dir, f"vol_{volume:02d}_title.html")
+
+    html_content = f"""<!DOCTYPE html>
+<html lang="{lang}">
+<head>
+    <meta charset="UTF-8">
+    <title>Volume {volume}</title>
+</head>
+<body>
+<h1 class="volume-title">Volume {volume}</h1>
+</body>
+</html>
+"""
+    with open(filepath, "w", encoding="utf-8") as f:
+        f.write(html_content)
+
+    return os.path.abspath(filepath)
+
+
 def ensure_chapter_title_normalized(filepath: str, chapter_num: int) -> None:
     """
-    Ensure the chapter's <title> and <h1> match the sequential chapter number.
-    Fixes any title resets (e.g. Chapter 1 at chapter 196).
+    Ensure the chapter's <title> and heading (<h1> or <h2>) match the sequential chapter number.
+    Fixes any title resets.
     """
     if not os.path.isfile(filepath):
         return
@@ -60,19 +105,29 @@ def ensure_chapter_title_normalized(filepath: str, chapter_num: int) -> None:
         with open(filepath, "r", encoding="utf-8") as f:
             content = f.read()
 
-        h1_match = re.search(r'<h1>(.*?)</h1>', content)
-        if not h1_match:
+        heading_match = re.search(r"<(h[12])>(.*?)</\1>", content)
+        if not heading_match:
             return
 
-        current_h1 = h1_match.group(1).strip()
-        new_title = normalize_title(current_h1, chapter_num)
+        tag = heading_match.group(1)
+        current_heading = heading_match.group(2).strip()
+        new_title = normalize_title(current_heading, chapter_num)
 
-        if new_title != current_h1:
-            content = re.sub(r'<title>.*?</title>', f'<title>{new_title}</title>', content)
-            content = re.sub(r'<h1>.*?</h1>', f'<h1>{new_title}</h1>', content)
+        if new_title != current_heading:
+            content = re.sub(r"<title>.*?</title>", f"<title>{new_title}</title>", content)
+            content = re.sub(
+                r"<" + tag + r">.*?</" + tag + r">",
+                f"<{tag}>{new_title}</{tag}>",
+                content,
+            )
             with open(filepath, "w", encoding="utf-8") as f:
                 f.write(content)
-            logger.info("Normalized title in %s: '%s' -> '%s'", os.path.basename(filepath), current_h1, new_title)
+            logger.info(
+                "Normalized title in %s: '%s' -> '%s'",
+                os.path.basename(filepath),
+                current_heading,
+                new_title,
+            )
     except Exception as exc:
         logger.debug("Failed normalizing title in %s: %s", filepath, exc)
 
@@ -81,13 +136,29 @@ def save_chapter_file(
     chapter: Chapter,
     output_dir: str = CHAPTERS_DIR,
     lang: str = BOOK_LANGUAGE,
+    use_volumes: bool = True,
 ) -> str:
     """
     Write a single chapter to an HTML file suitable for Pandoc compilation.
-    Returns the absolute path of the written file.
+    When volume organization is active, chapters are nested under vol_XX directories
+    and use <h2> tags so volume <h1> tags form a 2-level TOC in Pandoc.
     """
-    os.makedirs(output_dir, exist_ok=True)
-    filepath = get_chapter_filepath(chapter.number, output_dir)
+    vol = getattr(chapter, "volume", 0)
+    has_vol = bool(
+        use_volumes
+        and vol > 0
+        and ("vol" in chapter.raw_title.lower() or "vol." in chapter.display_title.lower())
+    )
+
+    if has_vol:
+        target_dir = os.path.join(output_dir, f"vol_{vol:02d}")
+        os.makedirs(target_dir, exist_ok=True)
+        filepath = get_chapter_filepath(chapter.ordinal, volume=vol, output_dir=output_dir)
+        heading_tag = "h2"
+    else:
+        os.makedirs(output_dir, exist_ok=True)
+        filepath = get_chapter_filepath(chapter.ordinal, output_dir=output_dir)
+        heading_tag = "h1"
 
     next_meta = (
         f'\n    <meta name="next-chapter-url" content="{chapter.next_url}">'
@@ -102,7 +173,7 @@ def save_chapter_file(
     <title>{chapter.display_title}</title>
 </head>
 <body>
-<h1>{chapter.display_title}</h1>
+<{heading_tag}>{chapter.display_title}</{heading_tag}>
 {chapter.body_html}
 </body>
 </html>
@@ -111,26 +182,33 @@ def save_chapter_file(
     with open(filepath, "w", encoding="utf-8") as f:
         f.write(html_content)
 
-    logger.debug("Saved chapter %d to %s", chapter.number, filepath)
+    logger.debug("Saved chapter %d to %s", chapter.ordinal, filepath)
     return os.path.abspath(filepath)
 
 
 def get_saved_chapter_files(chapters_dir: str = CHAPTERS_DIR) -> list[str]:
     """
-    Find and return all saved chapter HTML files sorted sequentially by chapter number.
-    Matches files like `chapter_0001.html`.
+    Find and return all saved chapter HTML files sorted sequentially.
+    Scans chapters_dir recursively, including vol_XX subdirectories.
+    Excludes volume title files (e.g. vol_*_title.html).
     """
     if not os.path.isdir(chapters_dir):
         return []
 
-    pattern = os.path.join(chapters_dir, "chapter_*.html")
-    files = glob.glob(pattern)
+    chapter_files: list[str] = []
+    for root, _dirs, files in os.walk(chapters_dir):
+        for f in files:
+            if f.startswith("chapter_") and f.endswith(".html"):
+                chapter_files.append(os.path.join(root, f))
 
-    def extract_chapter_num(path: str) -> int:
-        match = re.search(r'chapter_(\d+)\.html$', os.path.basename(path))
-        return int(match.group(1)) if match else 0
+    def extract_chapter_sort_key(path: str) -> tuple[int, int]:
+        vol_match = re.search(r"vol_(\d+)", path, re.IGNORECASE)
+        vol_num = int(vol_match.group(1)) if vol_match else 0
+        ord_match = re.search(r"chapter_(\d+)", os.path.basename(path))
+        ord_num = int(ord_match.group(1)) if ord_match else 0
+        return (vol_num, ord_num)
 
-    return sorted(files, key=extract_chapter_num)
+    return sorted(chapter_files, key=extract_chapter_sort_key)
 
 
 def build_epub(
@@ -146,78 +224,90 @@ def build_epub(
 ) -> str:
     """
     Compile chapters into an EPUB3 file using Pandoc.
-
-    Args:
-        chapters: Optional list of Chapter objects to save and compile.
-        chapter_files: Optional list of existing chapter HTML file paths.
-        output_dir: Directory where the output EPUB should be placed.
-        epub_filename: Name of the generated EPUB file.
-        book_title: Title metadata for the EPUB.
-        book_author: Author metadata for the EPUB.
-        book_language: Language code (e.g. 'en').
-        cover_image: Optional path to an image file for the book cover.
-        css_file: Optional path to a CSS stylesheet for typography.
-
-    Returns:
-        The path of the created EPUB file.
+    Automatically generates volume title pages and nested TOC if chapters are volume-nested.
     """
+    chapters_folder = os.path.join(output_dir, "chapters")
     files_to_compile: list[str] = []
 
-    # 1. If chapters were provided, write them first
+    # 1. Gather files to compile
     if chapters:
-        chapters_folder = os.path.join(output_dir, "chapters")
         for ch in chapters:
             path = save_chapter_file(ch, chapters_folder, lang=book_language)
             files_to_compile.append(path)
     elif chapter_files:
         files_to_compile = [os.path.abspath(f) for f in chapter_files]
     else:
-        # Fall back to scanning the chapters directory
-        chapters_folder = os.path.join(output_dir, "chapters")
         files_to_compile = get_saved_chapter_files(chapters_folder)
 
     if not files_to_compile:
         raise ValueError("No chapter files found or provided to build EPUB.")
 
-    # 2. Normalize titles in chapter files to ensure continuous chapter numbering
-    for idx, path in enumerate(files_to_compile, start=1):
-        match = re.search(r'chapter_(\d+)\.html$', os.path.basename(path))
-        num = int(match.group(1)) if match else idx
-        ensure_chapter_title_normalized(path, num)
+    # 2. Check if chapters are organized by volumes
+    has_volumes = any(re.search(r"vol_\d+", f, re.IGNORECASE) for f in files_to_compile)
+
+    final_file_list: list[str] = []
+    if has_volumes:
+        # Group chapters by volume
+        volumes_dict: dict[int, list[str]] = {}
+        non_volume_files: list[str] = []
+
+        for f in files_to_compile:
+            vol_match = re.search(r"vol_(\d+)", f, re.IGNORECASE)
+            if vol_match:
+                v_num = int(vol_match.group(1))
+                volumes_dict.setdefault(v_num, []).append(f)
+            else:
+                non_volume_files.append(f)
+
+        # Build list with volume title pages inserted before each volume's chapters
+        for v_num in sorted(volumes_dict.keys()):
+            title_page = create_volume_title_page(
+                volume=v_num,
+                output_dir=chapters_folder,
+                lang=book_language,
+            )
+            final_file_list.append(title_page)
+            final_file_list.extend(volumes_dict[v_num])
+
+        final_file_list.extend(non_volume_files)
+        toc_depth = "2"
+        split_level = "2"
+    else:
+        final_file_list = files_to_compile
+        toc_depth = "1"
+        split_level = "1"
 
     # 3. Build Pandoc CLI arguments
     extra_args = [
         "--toc",
-        "--toc-depth=1",
-        "--split-level=1",
+        f"--toc-depth={toc_depth}",
+        f"--split-level={split_level}",
         f"--metadata=title:{book_title}",
         f"--metadata=author:{book_author}",
         f"--metadata=lang:{book_language}",
     ]
 
-    # Optional cover image
     if cover_image and os.path.exists(cover_image):
         extra_args.append(f"--epub-cover-image={os.path.abspath(cover_image)}")
         logger.info("Using cover image: %s", cover_image)
 
-    # Optional custom CSS
     if css_file and os.path.exists(css_file):
         extra_args.append(f"--css={os.path.abspath(css_file)}")
         logger.info("Using CSS stylesheet: %s", css_file)
 
-    # 3. Create destination directory and output path
+    # 4. Create destination directory and output path
     os.makedirs(output_dir, exist_ok=True)
     output_path = os.path.join(output_dir, epub_filename)
     abs_output_path = os.path.abspath(output_path)
 
     logger.info(
-        "Compiling %d chapter(s) into EPUB: %s...",
-        len(files_to_compile),
+        "Compiling %d file(s) into EPUB: %s...",
+        len(final_file_list),
         abs_output_path,
     )
 
     pypandoc.convert_file(
-        files_to_compile,
+        final_file_list,
         to="epub3",
         outputfile=abs_output_path,
         extra_args=extra_args,

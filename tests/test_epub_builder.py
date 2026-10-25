@@ -94,6 +94,56 @@ class TestEpubBuilder(unittest.TestCase):
                 output_dir=empty_dir,
             )
 
+    def test_volume_hierarchy_saving_and_compilation(self):
+        from parser import ChapterMeta
+
+        meta1 = ChapterMeta(
+            chapter_id="101",
+            volume=1,
+            chapter_number="1",
+            title="Beginning",
+            raw_title="1 vol. 1 chapter - Beginning",
+            url="",
+            is_locked=False,
+        )
+        meta2 = ChapterMeta(
+            chapter_id="102",
+            volume=2,
+            chapter_number="1",
+            title="New World",
+            raw_title="2 vol. 1 chapter - New World",
+            url="",
+            is_locked=False,
+        )
+
+        ch1 = Chapter(meta=meta1, body_html="<p>Vol 1 Ch 1</p>", display_title="Vol. 1 Ch. 1 - Beginning", ordinal=1)
+        ch2 = Chapter(meta=meta2, body_html="<p>Vol 2 Ch 1</p>", display_title="Vol. 2 Ch. 1 - New World", ordinal=2)
+
+        p1 = save_chapter_file(ch1, output_dir=self.test_dir)
+        p2 = save_chapter_file(ch2, output_dir=self.test_dir)
+
+        self.assertIn("vol_01", p1)
+        self.assertIn("vol_02", p2)
+        with open(p1, "r", encoding="utf-8") as f:
+            self.assertIn("<h2>Vol. 1 Ch. 1 - Beginning</h2>", f.read())
+
+        files = get_saved_chapter_files(self.test_dir)
+        self.assertEqual(len(files), 2)
+        self.assertEqual(files[0], p1)
+        self.assertEqual(files[1], p2)
+
+        # Build EPUB with volume hierarchy
+        epub_path = build_epub(
+            chapters=[ch1, ch2],
+            output_dir=self.test_dir,
+            epub_filename="volume_test.epub",
+            book_title="Volume Test Novel",
+            css_file=None,
+        )
+        self.assertTrue(os.path.exists(epub_path))
+        self.assertGreater(os.path.getsize(epub_path), 0)
+
 
 if __name__ == "__main__":
     unittest.main()
+

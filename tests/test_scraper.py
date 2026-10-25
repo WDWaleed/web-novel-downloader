@@ -1,5 +1,5 @@
 """
-Unit tests for the scraper orchestration module.
+Unit tests for the Novelight scraper orchestration module.
 """
 
 import os
@@ -8,9 +8,9 @@ import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
-from parser import Chapter
+from parser import ChapterMeta
 from scraper import (
-    compute_chapter_url,
+    filter_chapters,
     is_chapter_downloaded,
     parse_arguments,
     scrape_novel,
@@ -24,138 +24,101 @@ class TestScraper(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.test_dir, ignore_errors=True)
 
-    def test_compute_chapter_url(self):
-        url1 = compute_chapter_url("5320155", 7173977)
-        url2 = compute_chapter_url("5320155", 7173996)
+    def test_filter_chapters_free_only(self):
+        ch1 = ChapterMeta("1", 1, "1", "One", "1 vol. 1 chapter - One", "", is_locked=False)
+        ch2 = ChapterMeta("2", 1, "2", "Two", "1 vol. 2 chapter - Two", "", is_locked=True)
+        ch3 = ChapterMeta("3", 2, "1", "Three", "2 vol. 1 chapter - Three", "", is_locked=False)
 
-        self.assertEqual(url1, "https://www.lolobun.com/n/5320155/7173977")
-        self.assertEqual(url2, "https://www.lolobun.com/n/5320155/7173996")
+        filtered = filter_chapters([ch1, ch2, ch3], free_only=True)
+        self.assertEqual(len(filtered), 2)
+        self.assertEqual(filtered[0].chapter_id, "1")
+        self.assertEqual(filtered[1].chapter_id, "3")
+
+    def test_filter_chapters_volumes(self):
+        ch1 = ChapterMeta("1", 1, "1", "One", "", "", is_locked=False)
+        ch2 = ChapterMeta("2", 2, "1", "Two", "", "", is_locked=False)
+        ch3 = ChapterMeta("3", 3, "1", "Three", "", "", is_locked=False)
+
+        filtered = filter_chapters([ch1, ch2, ch3], free_only=False, volumes={1, 3})
+        self.assertEqual(len(filtered), 2)
+        self.assertEqual([c.volume for c in filtered], [1, 3])
+
+    def test_filter_chapters_start_and_max(self):
+        chapters = [
+            ChapterMeta(str(i), 1, str(i), f"Title {i}", "", "", is_locked=False)
+            for i in range(1, 11)
+        ]
+
+        # Start at chapter 3, max 4 chapters -> chapters 3, 4, 5, 6
+        filtered = filter_chapters(chapters, start_chapter=3, max_chapters=4)
+        self.assertEqual(len(filtered), 4)
+        self.assertEqual(filtered[0].chapter_id, "3")
+        self.assertEqual(filtered[-1].chapter_id, "6")
 
     def test_is_chapter_downloaded(self):
-        self.assertFalse(is_chapter_downloaded(1, self.test_dir))
+        meta = ChapterMeta("101", 1, "1", "One", "1 vol. 1 chapter - One", "", is_locked=False)
+        self.assertFalse(is_chapter_downloaded(meta, 1, self.test_dir))
 
-        filepath = os.path.join(self.test_dir, "chapter_0001.html")
+        vol_dir = os.path.join(self.test_dir, "vol_01")
+        os.makedirs(vol_dir, exist_ok=True)
+        filepath = os.path.join(vol_dir, "chapter_0001.html")
         with open(filepath, "w", encoding="utf-8") as f:
             f.write("<html>content</html>")
 
-        self.assertTrue(is_chapter_downloaded(1, self.test_dir))
+        self.assertTrue(is_chapter_downloaded(meta, 1, self.test_dir))
 
     @patch("sys.argv", ["scraper.py", "--start", "5", "--chapters", "10", "--delay", "0.5"])
     def test_parse_arguments(self):
         args = parse_arguments()
+        self.assertEqual(args.start_chapter, 5)
+        self.assertEqual(args.max_chapters, 10)
         self.assertEqual(args.start, 5)
         self.assertEqual(args.chapters, 10)
         self.assertEqual(args.delay, 0.5)
         self.assertFalse(args.force)
 
-    @patch("scraper.fetch_page")
+    @patch("scraper.fetch_chapter_index")
+    @patch("scraper.fetch_json")
     @patch("scraper.build_epub")
-    def test_scrape_novel_mocked_run(self, mock_build_epub, mock_fetch):
-        # Chapter 1 points to non-sequential Chapter 2 endpoint (7173996)
-        ch1_html = """
-        <html>
-            <body>
-                <div class="title">Chapter 1: The Quest Begins</div>
-                <div class="text-content-box">
-                    <p>Leon was trapped in chains.</p>
-                </div>
-                <div class="btn next" id="bottom-open-next-btn">
-                    <a href="/n/5320155/7173996" name="next">Next episode</a>
-                    <img class="next-icon" src="/image/reader/icon_next_chapter.png" alt="prev icon" />
-                </div>
-            </body>
-        </html>
-        """
-        ch2_html = """
-        <html>
-            <body>
-                <div class="title">Chapter 2: The Escape</div>
-                <div class="text-content-box">
-                    <p>Leon broke free.</p>
-                </div>
-                <div class="btn next" id="bottom-open-next-btn">
-                    <a href="/n/5320155/7174001" name="next">Next episode</a>
-                </div>
-            </body>
-        </html>
-        """
-        mock_fetch.side_effect = [ch1_html, ch2_html]
+    def test_scrape_novel_mocked_run(self, mock_build_epub, mock_fetch_json, mock_fetch_index):
+        ch1 = ChapterMeta("150473", 1, "1", "First Chapter", "1 vol. 1 chapter - First Chapter", "", is_locked=False)
+        ch2 = ChapterMeta("150474", 1, "2", "Second Chapter", "1 vol. 2 chapter - Second Chapter", "", is_locked=False)
+        mock_fetch_index.return_value = [ch1, ch2]
+
+        content_1 = {"content": '<div class="chapter-text"><div>Paragraph in ch1</div></div>'}
+        content_2 = {"content": '<div class="chapter-text"><div>Paragraph in ch2</div></div>'}
+        mock_fetch_json.side_effect = [content_1, content_2]
         mock_build_epub.return_value = os.path.join(self.test_dir, "novel.epub")
 
-        args = MagicMock()
-        args.start = 1
-        args.chapters = 2
-        args.novel_id = "5320155"
-        args.first_chapter_id = 7173977
-        args.start_url = None
-        args.delay = 0.0
-        args.jitter = 0.0
-        args.force = False
-        args.build_only = False
-        args.no_epub = False
-        args.output_dir = self.test_dir
-        args.epub_filename = "novel.epub"
-        args.title = "Novel Title"
-        args.author = "Author"
-        args.lang = "en"
-        args.cover = None
-        args.css = None
-
-        scrape_novel(args)
-
-        # Ensure chapter files were saved
-        chapters_dir = os.path.join(self.test_dir, "chapters")
-        self.assertTrue(os.path.exists(os.path.join(chapters_dir, "chapter_0001.html")))
-        self.assertTrue(os.path.exists(os.path.join(chapters_dir, "chapter_0002.html")))
-
-        # Verify fetch was called with the initial URL then the dynamically parsed next link
-        mock_fetch.assert_any_call("https://www.lolobun.com/n/5320155/7173977")
-        mock_fetch.assert_any_call("https://www.lolobun.com/n/5320155/7173996")
-        mock_build_epub.assert_called_once()
-
-    @patch("scraper.fetch_page")
-    @patch("scraper.build_epub")
-    def test_scrape_novel_stops_when_no_next_link(self, mock_build_epub, mock_fetch):
-        # Single chapter with no next episode button
-        last_ch_html = """
-        <html>
-            <body>
-                <div class="title">Chapter 1: The Only Chapter</div>
-                <div class="text-content-box">
-                    <p>The story ends here.</p>
-                </div>
-            </body>
-        </html>
-        """
-        mock_fetch.return_value = last_ch_html
-        mock_build_epub.return_value = os.path.join(self.test_dir, "novel.epub")
-
-        args = MagicMock()
-        args.start = 1
-        args.chapters = 5  # Requested 5, but should stop after 1
-        args.novel_id = "5320155"
-        args.first_chapter_id = 7173977
-        args.start_url = None
-        args.delay = 0.0
-        args.jitter = 0.0
-        args.force = False
-        args.build_only = False
-        args.no_epub = False
-        args.output_dir = self.test_dir
-        args.epub_filename = "novel.epub"
-        args.title = "Novel Title"
-        args.author = "Author"
-        args.lang = "en"
-        args.cover = None
-        args.css = None
+        args = parse_arguments([
+            "--output-dir", self.test_dir,
+            "--max-chapters", "2",
+            "--delay", "0.0",
+            "--jitter", "0.0",
+        ])
 
         scrape_novel(args)
 
         chapters_dir = os.path.join(self.test_dir, "chapters")
-        self.assertTrue(os.path.exists(os.path.join(chapters_dir, "chapter_0001.html")))
-        self.assertFalse(os.path.exists(os.path.join(chapters_dir, "chapter_0002.html")))
-        self.assertEqual(mock_fetch.call_count, 1)
+        vol1_dir = os.path.join(chapters_dir, "vol_01")
+        self.assertTrue(os.path.exists(os.path.join(vol1_dir, "chapter_0001.html")))
+        self.assertTrue(os.path.exists(os.path.join(vol1_dir, "chapter_0002.html")))
         mock_build_epub.assert_called_once()
+
+    @patch("scraper.fetch_chapter_index")
+    @patch("scraper.build_epub")
+    def test_scrape_novel_list_only(self, mock_build_epub, mock_fetch_index):
+        ch1 = ChapterMeta("150473", 1, "1", "Ch 1", "1 vol. 1 chapter - Ch 1", "", is_locked=False)
+        mock_fetch_index.return_value = [ch1]
+
+        args = parse_arguments([
+            "--output-dir", self.test_dir,
+            "--list-only",
+        ])
+
+        scrape_novel(args)
+        # Should not build EPUB or create chapter files in list-only mode
+        mock_build_epub.assert_not_called()
 
 
 if __name__ == "__main__":

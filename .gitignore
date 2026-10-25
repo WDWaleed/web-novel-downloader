@@ -40,3 +40,10 @@ output/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Planning docs (local only)
+implementation.md
+future-features.md
+
+# Temporary scratch HTML files
+_*.html

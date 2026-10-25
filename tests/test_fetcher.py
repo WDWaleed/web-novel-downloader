@@ -73,6 +73,44 @@ class TestFetcher(unittest.TestCase):
         self.assertEqual(mock_session.get.call_count, 1)
         mock_sleep.assert_not_called()
 
+    def test_fetch_json_success(self):
+        from fetcher import fetch_json
+
+        mock_session = MagicMock()
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"status": "ok", "content": "<div>test</div>"}
+        mock_session.get.return_value = mock_response
+
+        data = fetch_json("https://novelight.net/api/test", session=mock_session)
+        self.assertEqual(data["status"], "ok")
+        self.assertEqual(mock_session.get.call_count, 1)
+
+        # Check headers passed to get
+        args, kwargs = mock_session.get.call_args
+        self.assertIn("headers", kwargs)
+        self.assertEqual(kwargs["headers"].get("X-Requested-With"), "XMLHttpRequest")
+
+    def test_fetch_json_with_params(self):
+        from fetcher import fetch_json
+
+        mock_session = MagicMock()
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"chapters": []}
+        mock_session.get.return_value = mock_response
+
+        params = {"book_id": "337", "page": 1}
+        data = fetch_json(
+            "https://novelight.net/book/ajax/chapter-pagination",
+            params=params,
+            session=mock_session,
+        )
+        self.assertEqual(data["chapters"], [])
+        args, kwargs = mock_session.get.call_args
+        self.assertEqual(kwargs["params"], params)
+
 
 if __name__ == "__main__":
     unittest.main()
+
