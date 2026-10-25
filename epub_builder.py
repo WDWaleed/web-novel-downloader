@@ -19,7 +19,7 @@ from config import (
     EPUB_FILENAME,
     OUTPUT_DIR,
 )
-from parser import Chapter
+from parser import Chapter, normalize_title
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +47,34 @@ def extract_next_url_from_file(filepath: str) -> Optional[str]:
     except Exception as exc:
         logger.debug("Failed reading next chapter URL from %s: %s", filepath, exc)
     return None
+
+
+def ensure_chapter_title_normalized(filepath: str, chapter_num: int) -> None:
+    """
+    Ensure the chapter's <title> and <h1> match the sequential chapter number.
+    Fixes any title resets (e.g. Chapter 1 at chapter 196).
+    """
+    if not os.path.isfile(filepath):
+        return
+    try:
+        with open(filepath, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        h1_match = re.search(r'<h1>(.*?)</h1>', content)
+        if not h1_match:
+            return
+
+        current_h1 = h1_match.group(1).strip()
+        new_title = normalize_title(current_h1, chapter_num)
+
+        if new_title != current_h1:
+            content = re.sub(r'<title>.*?</title>', f'<title>{new_title}</title>', content)
+            content = re.sub(r'<h1>.*?</h1>', f'<h1>{new_title}</h1>', content)
+            with open(filepath, "w", encoding="utf-8") as f:
+                f.write(content)
+            logger.info("Normalized title in %s: '%s' -> '%s'", os.path.basename(filepath), current_h1, new_title)
+    except Exception as exc:
+        logger.debug("Failed normalizing title in %s: %s", filepath, exc)
 
 
 def save_chapter_file(
@@ -151,7 +179,13 @@ def build_epub(
     if not files_to_compile:
         raise ValueError("No chapter files found or provided to build EPUB.")
 
-    # 2. Build Pandoc CLI arguments
+    # 2. Normalize titles in chapter files to ensure continuous chapter numbering
+    for idx, path in enumerate(files_to_compile, start=1):
+        match = re.search(r'chapter_(\d+)\.html$', os.path.basename(path))
+        num = int(match.group(1)) if match else idx
+        ensure_chapter_title_normalized(path, num)
+
+    # 3. Build Pandoc CLI arguments
     extra_args = [
         "--toc",
         "--toc-depth=1",

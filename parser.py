@@ -25,41 +25,32 @@ class Chapter:
 
 def normalize_title(raw: str, ordinal: int) -> str:
     """
-    Normalize inconsistent chapter title strings into a consistent format:
+    Normalize chapter title strings into a consistent sequential format:
       "Chapter 1: After Defeat and Capture, Som"  -> "Chapter 1: After Defeat and Capture, Som"
       "2  You're Awake? You're a Dad Now!"        -> "Chapter 2: You're Awake? You're a Dad Now!"
       "3: The Great Journey"                      -> "Chapter 3: The Great Journey"
       "The Calm Before The Storm"                 -> "Chapter 4: The Calm Before The Storm"
+      "1 The Silver Dragon Lady..." (ordinal 196) -> "Chapter 196: The Silver Dragon Lady..."
 
     Strategy:
-      1. If title starts with 'Chapter <N>' (case-insensitive), normalize prefix and preserve subtitle.
-      2. If title starts with a bare number, reformat to 'Chapter <N>: <subtitle>'.
-      3. Otherwise, prefix with 'Chapter <ordinal>: <raw>'.
+      Always enforces sequential chapter numbering using `ordinal` (so resets in source
+      volumes or extras do not corrupt chapter numbers), while preserving the subtitle.
     """
     raw_clean = " ".join(raw.strip().split()) if raw else ""
     if not raw_clean:
         return f"Chapter {ordinal}"
 
-    # Case 1: Already starts with "Chapter <N>" or "Ch. <N>" or "Ch <N>"
-    match_chapter = re.match(r'^(?:chapter|ch\.?)\s*(\d+)(.*)$', raw_clean, re.IGNORECASE)
-    if match_chapter:
-        num = match_chapter.group(1)
-        rest = match_chapter.group(2).strip()
-        # Clean any leading separators like ':' or '-'
-        rest = re.sub(r'^[:\-–—]\s*', '', rest).strip()
-        return f"Chapter {num}: {rest}" if rest else f"Chapter {num}"
+    # Strip any leading chapter prefix (e.g. "Chapter 1", "Ch. 1", "1:")
+    subtitle = re.sub(
+        r'^(?:chapter|ch\.?)?\s*\d+\s*[:\-–—]?\s*',
+        '',
+        raw_clean,
+        flags=re.IGNORECASE,
+    ).strip()
 
-    # Case 2: Starts with a bare number (e.g., "2 You're Awake..." or "2: You're Awake...")
-    match_num = re.match(r'^(\d+)\s*(.*)$', raw_clean)
-    if match_num:
-        num = match_num.group(1)
-        rest = match_num.group(2).strip()
-        rest = re.sub(r'^[:\-–—]\s*', '', rest).strip()
-        return f"Chapter {num}: {rest}" if rest else f"Chapter {num}"
-
-    # Case 3: No number detected — use ordinal
-    logger.info("Title '%s' did not have an explicit chapter number. Assigning ordinal %d.", raw_clean, ordinal)
-    return f"Chapter {ordinal}: {raw_clean}"
+    if subtitle:
+        return f"Chapter {ordinal}: {subtitle}"
+    return f"Chapter {ordinal}"
 
 
 def extract_next_chapter_url(

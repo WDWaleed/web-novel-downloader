@@ -50,6 +50,16 @@ class TestParser(unittest.TestCase):
         self.assertEqual(normalize_title("", 7), "Chapter 7")
         self.assertEqual(normalize_title("   ", 8), "Chapter 8")
 
+    def test_normalize_title_preserves_sequential_ordinal_on_reset(self):
+        self.assertEqual(
+            normalize_title("1 The Silver Dragon Lady Wants Me to Confess My Love", 196),
+            "Chapter 196: The Silver Dragon Lady Wants Me to Confess My Love",
+        )
+        self.assertEqual(
+            normalize_title("Chapter 2: This is a date!", 197),
+            "Chapter 197: This is a date!",
+        )
+
     def test_parse_chapter_full_flow(self):
         html = """
         <!DOCTYPE html>
