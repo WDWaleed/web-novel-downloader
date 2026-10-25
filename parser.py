@@ -57,11 +57,21 @@ WATERMARK_PATTERN = re.compile(
     (?:{_NOVELIGHT_CORE})
     # Optional trailing symbols/ornaments/brackets
     (?:\s*{_ORNAMENT}{{1,8}}|\s*[\/\~\]\)])?
-    # Optional trailing parenthetical promo notice
-    (?:\s*\([^\)]*(?:read|copy|source|exclusive|only|novelight|original|site|chapter|stolen)[^\)]*\))?
+    # Optional trailing parenthetical promo notice (any parenthetical directly attached to watermark)
+    (?:\s*\([^\)\n]{{1,80}}\))?
     """,
     re.VERBOSE,
 )
+
+
+def normalize_watermark_char(c: str) -> str:
+    """Normalize a single character for watermark matching while preserving prose typography."""
+    if c in "…“”‘’—–":
+        return c
+    norm = unicodedata.normalize("NFKD", c)
+    if len(norm) == 1:
+        c = norm
+    return c.translate(HOMOGLYPHS)
 
 
 def strip_watermarks(text: str) -> str:
@@ -69,15 +79,27 @@ def strip_watermarks(text: str) -> str:
     Remove all obfuscated Novelight watermarks and attached promotional notes.
     Handles mathematical unicode, cross-script homoglyphs, zero-width characters,
     decorative symbols, and attached promotional parentheticals.
+
+    Preserves 100% of surrounding prose, HTML formatting tags, and typography
+    (such as horizontal ellipses '…', em-dashes '—', and smart quotes).
     """
     if not text:
         return ""
-    cleaned = re.sub(r"[\u200B-\u200D\uFEFF\u00AD\u2060\u200E\u200F]", "", text)
-    normalized = unicodedata.normalize("NFKD", cleaned)
-    translated = normalized.translate(HOMOGLYPHS)
-    result = WATERMARK_PATTERN.sub("", translated)
+    # Build 1-to-1 character normalized string for exact index matching
+    norm = "".join(normalize_watermark_char(c) for c in text)
+    matches = list(WATERMARK_PATTERN.finditer(norm))
+    if not matches:
+        return text.strip()
+
+    # Excise each match from right to left to preserve offsets
+    result = text
+    for m in reversed(matches):
+        start, end = m.span()
+        result = result[:start] + result[end:]
+
+    # Clean up redundant spaces and trailing punctuation spacing left by excised watermark
     result = re.sub(r"[ \t]{2,}", " ", result)
-    result = re.sub(r"\s+([,.:;?!—–])", r"\1", result)
+    result = re.sub(r"[ \t]+([,.:;?!])", r"\1", result)
     return result.strip()
 
 

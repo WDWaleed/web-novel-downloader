@@ -221,6 +221,19 @@ class TestParser(unittest.TestCase):
         paras = [p for p in cleaned.split("\n") if p.strip()]
         self.assertEqual(len(paras), 2)
 
+    def test_strip_watermarks_preserves_typography_and_clean_prose(self):
+        clean_prose = [
+            "“First-class honors… first-class honors… so many first-class honors!” Leon muttered in a daze.",
+            "Two seconds later —",
+            "<strong>Chapter 40: Fire a shot first.</strong>",
+            "<em>Saying such things as a defeated captive is truly shameless!</em>",
+            "And it just so happened that all bookworms shared a common trait — they were both stubborn and loved to argue about trivial details.",
+            "Rosvitha widened her eyes slightly, “Leon…”",
+            "“Pfft~ Sister, you’re really something. Then, I’ll make a heart sign with Sister~.”",
+        ]
+        for prose in clean_prose:
+            self.assertEqual(strip_watermarks(prose), prose)
+
 
 if __name__ == "__main__":
     unittest.main()
