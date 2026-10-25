@@ -26,8 +26,12 @@ A robust, configurable Python CLI tool that scrapes web novel chapters from `lol
   - Can re-compile existing chapters into an EPUB at any time without fetching (`--build-only`).
 - **Graceful Interruption**:
   - Pressing `Ctrl+C` safely halts scraping and compiles whatever chapters have been downloaded so far.
-- **Visual Progress Bar**:
-  - Real-time progress bar powered by `tqdm`.
+- **Rich Terminal UI**:
+  - Coloured, formatted log output via `rich`.
+  - Live progress bar with spinner, chapter count, elapsed time, and ETA.
+  - Real-time status column showing the current chapter's **endpoint ID** (the numeric URL segment, e.g. `7173996`).
+  - Chapter download summary table (chapter #, endpoint, title, status) printed after the scrape.
+  - Styled success and error panels.
 
 ---
 
@@ -129,7 +133,7 @@ lolobun_scraper/
 ├── fetcher.py          # HTTP requests, session management, exponential backoff
 ├── parser.py           # BeautifulSoup chapter parser and title normalizer
 ├── epub_builder.py     # Pandoc EPUB3 compiler with TOC & metadata
-├── scraper.py          # CLI entry point, argument parsing, progress bar
+├── scraper.py          # CLI entry point, argument parsing, Rich progress & logging
 ├── styles.css          # E-reader CSS styling for EPUB typography
 ├── requirements.txt    # Python dependencies
 ├── tests/              # Automated unit tests
