@@ -47,7 +47,7 @@ Requires **Python 3.10+**.
 
 ```powershell
 # Clone or navigate to the project directory
-cd "d:\Web Dev Projects\25_LoLoBun Scraper"
+cd d:\projects\lolobun_scrapper
 
 # Create a virtual environment
 python -m venv .venv
@@ -117,7 +117,7 @@ python scraper.py --cover cover.jpg
 ## 📂 Project Structure
 
 ```
-25_LoLoBun Scraper/
+lolobun_scraper/
 ├── config.py           # Module-level defaults and knobs
 ├── fetcher.py          # HTTP requests, session management, exponential backoff
 ├── parser.py           # BeautifulSoup chapter parser and title normalizer
