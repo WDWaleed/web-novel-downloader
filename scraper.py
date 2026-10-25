@@ -14,6 +14,7 @@ from tqdm import tqdm
 import config
 from epub_builder import (
     build_epub,
+    extract_next_url_from_file,
     get_chapter_filepath,
     get_saved_chapter_files,
     save_chapter_file,
@@ -24,10 +25,32 @@ from parser import parse_chapter
 logger = logging.getLogger("lolobun_scraper")
 
 
-def compute_chapter_url(novel_id: str, first_chapter_id: int, chapter_number: int) -> str:
-    """Compute the URL for a given chapter ordinal using the descending ID formula."""
-    chapter_id = first_chapter_id - chapter_number + 1
+def compute_chapter_url(novel_id: str, chapter_id: int | str) -> str:
+    """Compute the URL for a given novel and chapter ID."""
     return f"https://www.lolobun.com/n/{novel_id}/{chapter_id}"
+
+
+def get_initial_chapter_url(args: argparse.Namespace, chapters_dir: str) -> Optional[str]:
+    """Determine the starting chapter URL based on CLI args or cached chapters."""
+    if getattr(args, "start_url", None):
+        return args.start_url
+
+    if args.start == 1:
+        return compute_chapter_url(args.novel_id, args.first_chapter_id)
+
+    # If starting at chapter > 1, check if chapter (start - 1) exists on disk with next_url
+    prev_chapter_file = get_chapter_filepath(args.start - 1, chapters_dir)
+    prev_url = extract_next_url_from_file(prev_chapter_file)
+    if prev_url:
+        logger.info(
+            "Found URL for chapter %d from cached chapter %d metadata: %s",
+            args.start,
+            args.start - 1,
+            prev_url,
+        )
+        return prev_url
+
+    return compute_chapter_url(args.novel_id, args.first_chapter_id)
 
 
 def is_chapter_downloaded(chapter_number: int, chapters_dir: str) -> bool:
@@ -54,7 +77,13 @@ def parse_arguments() -> argparse.Namespace:
         "--first-chapter-id",
         type=int,
         default=config.FIRST_CHAPTER_ID,
-        help="First chapter numeric ID for descending sequence",
+        help="First chapter numeric ID for starting sequence",
+    )
+    parser.add_argument(
+        "--start-url",
+        type=str,
+        default=None,
+        help="Explicit starting URL (overrides novel-id and first-chapter-id)",
     )
 
     # Scraping knobs
@@ -188,32 +217,54 @@ def scrape_novel(args: argparse.Namespace) -> None:
 
         pbar = tqdm(range(args.start, end_chapter + 1), unit="ch", desc="Scraping")
         interrupted = False
+        current_url = get_initial_chapter_url(args, chapters_dir)
 
         try:
             for current_ch in pbar:
                 # Check for existing download unless --force is specified
                 if not args.force and is_chapter_downloaded(current_ch, chapters_dir):
-                    pbar.set_postfix_str(f"Ch {current_ch} (cached)")
-                    logger.debug("Chapter %d already exists. Skipping download.", current_ch)
-                    continue
+                    cached_file = get_chapter_filepath(current_ch, chapters_dir)
+                    cached_next_url = extract_next_url_from_file(cached_file)
+                    if cached_next_url or current_ch == end_chapter:
+                        pbar.set_postfix_str(f"Ch {current_ch} (cached)")
+                        logger.debug("Chapter %d already exists. Skipping download.", current_ch)
+                        if cached_next_url:
+                            current_url = cached_next_url
+                        continue
+                    else:
+                        logger.info(
+                            "Cached chapter %d missing next URL metadata. Fetching to determine next chapter link...",
+                            current_ch,
+                        )
 
-                url = compute_chapter_url(args.novel_id, args.first_chapter_id, current_ch)
+                if not current_url:
+                    logger.warning("No URL available to fetch chapter %d. Stopping scrape.", current_ch)
+                    break
+
                 pbar.set_postfix_str(f"Fetching Ch {current_ch}")
 
                 try:
-                    html = fetch_page(url)
-                    chapter = parse_chapter(html, ordinal=current_ch)
+                    html = fetch_page(current_url)
+                    chapter = parse_chapter(html, ordinal=current_ch, base_url=current_url)
                     save_chapter_file(chapter, chapters_dir, lang=args.lang)
                     pbar.set_postfix_str(f"Saved: {chapter.display_title[:25]}")
+                    current_url = chapter.next_url
+
+                    if not current_url and current_ch < end_chapter:
+                        logger.info(
+                            "No next chapter link found on chapter %d (div#bottom-open-next-btn). Reached end of novel.",
+                            current_ch,
+                        )
+                        break
                 except Exception as exc:
-                    logger.error("Failed processing chapter %d (%s): %s", current_ch, url, exc)
+                    logger.error("Failed processing chapter %d (%s): %s", current_ch, current_url, exc)
                     # Stop on 404 which usually signifies end of novel chapters
                     if "404" in str(exc):
                         logger.warning("Stopping early as chapter %d returned 404.", current_ch)
                         break
 
                 # Sleep between requests (skip delay after last chapter)
-                if current_ch < end_chapter:
+                if current_ch < end_chapter and current_url:
                     sleep_with_jitter(args.delay, args.jitter)
 
         except KeyboardInterrupt:

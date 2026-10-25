@@ -4,7 +4,12 @@ Unit tests for the parser module.
 
 import unittest
 
-from parser import Chapter, normalize_title, parse_chapter
+from parser import (
+    Chapter,
+    extract_next_chapter_url,
+    normalize_title,
+    parse_chapter,
+)
 
 
 class TestParser(unittest.TestCase):
@@ -99,5 +104,63 @@ class TestParser(unittest.TestCase):
         self.assertIn("<p>Line 2 of novel</p>", chapter.body_html)
 
 
+    def test_extract_next_chapter_url_from_bottom_open_next_btn(self):
+        html = """
+        <div class="btn next" id="bottom-open-next-btn">
+            <a href="/n/5320155/7173996" name="next">Next episode</a>
+            <img class="next-icon" src="/image/reader/icon_next_chapter.png" alt="prev icon" />
+        </div>
+        """
+        next_url = extract_next_chapter_url(html)
+        self.assertEqual(next_url, "https://www.lolobun.com/n/5320155/7173996")
+
+    def test_extract_next_chapter_url_absolute(self):
+        html = """
+        <div class="btn next" id="bottom-open-next-btn">
+            <a href="https://www.lolobun.com/n/5320155/7173996" name="next">Next episode</a>
+        </div>
+        """
+        next_url = extract_next_chapter_url(html)
+        self.assertEqual(next_url, "https://www.lolobun.com/n/5320155/7173996")
+
+    def test_extract_next_chapter_url_missing(self):
+        html = "<div>No next link here</div>"
+        self.assertIsNone(extract_next_chapter_url(html))
+
+    def test_extract_next_chapter_url_invalid_href(self):
+        html = """
+        <div class="btn next" id="bottom-open-next-btn">
+            <a href="javascript:void(0)" name="next">Next episode</a>
+        </div>
+        """
+        self.assertIsNone(extract_next_chapter_url(html))
+
+        html_hash = """
+        <div class="btn next" id="bottom-open-next-btn">
+            <a href="#" name="next">Next episode</a>
+        </div>
+        """
+        self.assertIsNone(extract_next_chapter_url(html_hash))
+
+    def test_parse_chapter_includes_next_url(self):
+        html = """
+        <html>
+        <body>
+            <div class="title">Chapter 5: Turning Point</div>
+            <div class="text-content-box">
+                <p>The fifth chapter content.</p>
+            </div>
+            <div class="btn next" id="bottom-open-next-btn">
+                <a href="/n/5320155/7173996" name="next">Next episode</a>
+                <img class="next-icon" src="/image/reader/icon_next_chapter.png" alt="prev icon" />
+            </div>
+        </body>
+        </html>
+        """
+        chapter = parse_chapter(html, ordinal=5, base_url="https://www.lolobun.com/n/5320155/7173973")
+        self.assertEqual(chapter.next_url, "https://www.lolobun.com/n/5320155/7173996")
+
+
 if __name__ == "__main__":
     unittest.main()
+

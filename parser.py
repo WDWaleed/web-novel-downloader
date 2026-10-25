@@ -5,7 +5,8 @@ HTML parsing and cleaning module for LoLoBun web novel chapters.
 import logging
 import re
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Union
+from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
 
@@ -19,6 +20,7 @@ class Chapter:
     raw_title: str        # The raw title extracted from the web page
     display_title: str    # Cleaned, normalized title for headings and TOC
     body_html: str        # Cleaned HTML content containing paragraphs
+    next_url: Optional[str] = None  # URL of the next chapter if present
 
 
 def normalize_title(raw: str, ordinal: int) -> str:
@@ -60,13 +62,55 @@ def normalize_title(raw: str, ordinal: int) -> str:
     return f"Chapter {ordinal}: {raw_clean}"
 
 
-def parse_chapter(html: str, ordinal: int) -> Chapter:
+def extract_next_chapter_url(
+    soup_or_html: Union[str, BeautifulSoup],
+    base_url: str = "https://www.lolobun.com",
+) -> Optional[str]:
     """
-    Parse a chapter's HTML, clean junk tags, and return a Chapter instance.
+    Extract the next chapter URL from the chapter HTML.
+    Looks inside `div#bottom-open-next-btn` for an `a[href]`,
+    with fallback to `a[name='next'][href]` or `div.btn.next a[href]`.
+
+    Args:
+        soup_or_html: Raw HTML string or BeautifulSoup parsed tree.
+        base_url: Base URL used to resolve relative URLs.
+
+    Returns:
+        Absolute URL of the next chapter, or None if not found/unavailable.
+    """
+    if isinstance(soup_or_html, str):
+        soup = BeautifulSoup(soup_or_html, "html.parser")
+    else:
+        soup = soup_or_html
+
+    # Look for anchor inside div#bottom-open-next-btn
+    next_btn = soup.select_one("div#bottom-open-next-btn a[href]")
+    if not next_btn:
+        # Fallbacks for flexibility
+        next_btn = soup.select_one("a[name='next'][href], div.btn.next a[href]")
+
+    if not next_btn:
+        return None
+
+    href = next_btn.get("href", "").strip()
+    if not href or href == "#" or href.lower().startswith("javascript:"):
+        return None
+
+    return urljoin(base_url, href)
+
+
+def parse_chapter(
+    html: str,
+    ordinal: int,
+    base_url: str = "https://www.lolobun.com",
+) -> Chapter:
+    """
+    Parse a chapter's HTML, clean junk tags, extract next chapter URL, and return a Chapter instance.
 
     Args:
         html: Raw HTML string of the chapter page.
         ordinal: 1-based sequential chapter number.
+        base_url: Base URL used to resolve relative links.
 
     Returns:
         A Chapter dataclass instance.
@@ -75,6 +119,9 @@ def parse_chapter(html: str, ordinal: int) -> Chapter:
         ValueError: If the main chapter content container cannot be found.
     """
     soup = BeautifulSoup(html, "html.parser")
+
+    # ── Next Chapter URL Extraction ──────────────────────────────
+    next_url = extract_next_chapter_url(soup, base_url=base_url)
 
     # ── 1. Title Extraction ──────────────────────────────────────
     title_el = soup.select_one("div.title")
@@ -127,4 +174,5 @@ def parse_chapter(html: str, ordinal: int) -> Chapter:
         raw_title=raw_title,
         display_title=display_title,
         body_html=body_html,
+        next_url=next_url,
     )

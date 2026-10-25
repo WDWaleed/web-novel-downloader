@@ -6,7 +6,7 @@ A robust, configurable Python CLI tool that scrapes web novel chapters from `lol
 
 ## ✨ Features
 
-- **Sequential & Descending ID Resolution**: Maps chapter numbers (1, 2, 3...) to LoLoBun's descending URL structure (`first_id - chapter_number + 1`).
+- **Dynamic Chapter Traversal**: Automatically discovers and follows each chapter's "Next episode" link (`div#bottom-open-next-btn a`), reliably handling non-sequential and non-linear database chapter IDs.
 - **Resilient HTTP Fetching**:
   - Realistic `User-Agent` and headers.
   - Automatic retries on transient errors (`429 Too Many Requests`, `5xx Server Errors`, connection drops).
@@ -22,6 +22,7 @@ A robust, configurable Python CLI tool that scrapes web novel chapters from `lol
   - Supports custom cover images (`--cover`).
 - **Resume & Caching**:
   - Checks for existing downloaded chapters on disk and skips re-downloading them.
+  - Caches next-chapter URL metadata to seamlessly resume subsequent downloads without extra network requests.
   - Can re-compile existing chapters into an EPUB at any time without fetching (`--build-only`).
 - **Graceful Interruption**:
   - Pressing `Ctrl+C` safely halts scraping and compiles whatever chapters have been downloaded so far.
@@ -72,7 +73,8 @@ python scraper.py
 | Argument | Shorthand | Default | Description |
 |---|---|---|---|
 | `--novel-id` | | `5320155` | Novel ID on lolobun.com |
-| `--first-chapter-id` | | `7173977` | First chapter's numeric ID |
+| `--first-chapter-id` | | `7173977` | First chapter's numeric ID (for initial URL) |
+| `--start-url` | | `None` | Direct URL to start scraping from (overrides novel and chapter IDs) |
 | `--start` | `-s` | `1` | Starting chapter ordinal (1-based) |
 | `--chapters` | `-n` | `50` | Number of chapters to scrape |
 | `--delay` | `-d` | `2.0` | Seconds delay between requests |
@@ -93,6 +95,11 @@ python scraper.py
 #### Scrape a specific range (e.g., Chapters 1 to 20):
 ```powershell
 python scraper.py --start 1 --chapters 20 --title "After Defeat and Capture" --author "Author Name"
+```
+
+#### Scrape starting from a specific chapter URL:
+```powershell
+python scraper.py --start-url "https://www.lolobun.com/n/5320155/7173996" --chapters 15
 ```
 
 #### Resume a download:

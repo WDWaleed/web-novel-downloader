@@ -30,6 +30,25 @@ def get_chapter_filepath(chapter_number: int, output_dir: str = CHAPTERS_DIR) ->
     return os.path.join(output_dir, filename)
 
 
+def extract_next_url_from_file(filepath: str) -> Optional[str]:
+    """
+    Read the next chapter URL stored in a saved chapter HTML file's meta tag.
+    Returns None if file does not exist or meta tag is not present.
+    """
+    if not os.path.isfile(filepath):
+        return None
+    try:
+        with open(filepath, "r", encoding="utf-8") as f:
+            content = f.read(4096)
+        match = re.search(r'<meta\s+name=["\']next-chapter-url["\']\s+content=["\']([^"\']+)["\']', content)
+        if match:
+            url = match.group(1).strip()
+            return url if url else None
+    except Exception as exc:
+        logger.debug("Failed reading next chapter URL from %s: %s", filepath, exc)
+    return None
+
+
 def save_chapter_file(
     chapter: Chapter,
     output_dir: str = CHAPTERS_DIR,
@@ -42,10 +61,16 @@ def save_chapter_file(
     os.makedirs(output_dir, exist_ok=True)
     filepath = get_chapter_filepath(chapter.number, output_dir)
 
+    next_meta = (
+        f'\n    <meta name="next-chapter-url" content="{chapter.next_url}">'
+        if getattr(chapter, "next_url", None)
+        else ""
+    )
+
     html_content = f"""<!DOCTYPE html>
 <html lang="{lang}">
 <head>
-    <meta charset="UTF-8">
+    <meta charset="UTF-8">{next_meta}
     <title>{chapter.display_title}</title>
 </head>
 <body>
