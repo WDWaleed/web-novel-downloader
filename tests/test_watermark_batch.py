@@ -163,6 +163,7 @@ def run_watermark_audit(start_ch: int = 11, count: int = 30) -> list[dict]:
             with open(cache_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
         else:
+            console.print(f"[dim]Fetching {idx}/{start_ch + count - 1} (Vol {meta.volume} Ch {meta.chapter_number})...[/dim]")
             url = f"{config.READ_CHAPTER_URL}/{meta.chapter_id}"
             data = fetch_json(url)
             with open(cache_file, "w", encoding="utf-8") as f:
