@@ -13,6 +13,7 @@ from parser import (
     parse_chapter,
     parse_chapter_list,
     parse_chapter_title,
+    strip_watermarks,
 )
 
 
@@ -177,6 +178,50 @@ class TestParser(unittest.TestCase):
         self.assertEqual(chapter.display_title, "Vol. 1 Ch. 1 - After defeat")
         self.assertEqual(chapter.body_html, "<p>The heroic warrior fell.</p>")
 
+    def test_strip_watermarks_real_world_examples(self):
+        cases = [
+            ("Her words struck [N O V E L I G H T] deliberately", "Her words struck deliberately"),
+            ("Her cheeks had a hint ~Nоvеl𝕚ght~ of baby fat, and the features already hinted at her potential beauty.",
+             "Her cheeks had a hint of baby fat, and the features already hinted at her potential beauty."),
+            ("“You’re talking ➤ NоvеⅠight ➤ (Read more on our source) nonsense! Where is it standing? I don’t feel—”",
+             "“You’re talking nonsense! Where is it standing? I don’t feel—”"),
+            ("“It engraved on your body represents shame, represents you becoming my captive, represents that for the rest of your life, you can only be bound to me, unable to go °• N 𝑜 v 𝑒 l i g h t •° anywhere.”",
+             "“It engraved on your body represents shame, represents you becoming my captive, represents that for the rest of your life, you can only be bound to me, unable to go anywhere.”"),
+            ("With his strength depleted, Leon arrived at ❀ Nоvеlігht ❀ (Don’t copy, read here) a riverbank late at night to replenish his energy.",
+             "With his strength depleted, Leon arrived at a riverbank late at night to replenish his energy."),
+            ("When Rosvitha ❖ Nоvеl𝚒ght ❖ (Exclusive on Nоvеl𝚒ght) was deeply immersed in her emotions, she always seemed a bit out of control",
+             "When Rosvitha was deeply immersed in her emotions, she always seemed a bit out of control"),
+            ("Leon glared at her ◆ Nоvеlіgһt ◆ (Only on Nоvеlіgһt) but didn’t say anything, tacitly admitting.",
+             "Leon glared at her but didn’t say anything, tacitly admitting."),
+            ("He was a bit taller than Rosvitha, so when Rosvitha helped him adjust the collar, he lowered his head, and his lips /N_o_v_e_l_i_g_h_t/ would inadvertently touch Rosvitha’s fingers.",
+             "He was a bit taller than Rosvitha, so when Rosvitha helped him adjust the collar, he lowered his head, and his lips would inadvertently touch Rosvitha’s fingers."),
+            ("Hesitating for a moment, Leon still waved, “Muen, ➤ NоvеⅠight ➤ (Read more on our source) sorry to keep you waiting.",
+             "Hesitating for a moment, Leon still waved, “Muen, sorry to keep you waiting."),
+            ("Making Leon take care of the kid was one thing, ❖ Nоvеl𝚒ght ❖ (Exclusive on Nоvеl𝚒ght) but making him drag his emptied-out body to accompany Muen in playing games was another.",
+             "Making Leon take care of the kid was one thing, but making him drag his emptied-out body to accompany Muen in playing games was another."),
+        ]
+        for raw, expected in cases:
+            cleaned = strip_watermarks(raw)
+            self.assertEqual(cleaned, expected)
+
+    def test_clean_chapter_content_removes_standalone_watermark_paragraph(self):
+        content_html = """
+        <div class="chapter-text">
+            <div>Valid first paragraph.</div>
+            <div>❀ Nоvеlігht ❀ (Don’t copy, read here)</div>
+            <div>Valid second paragraph.</div>
+        </div>
+        """
+        cleaned = clean_chapter_content(content_html)
+        self.assertIn("<p>Valid first paragraph.</p>", cleaned)
+        self.assertIn("<p>Valid second paragraph.</p>", cleaned)
+        self.assertNotIn("Novelight", cleaned)
+        self.assertNotIn("Don’t copy", cleaned)
+        # Standalone paragraph should be removed completely
+        paras = [p for p in cleaned.split("\n") if p.strip()]
+        self.assertEqual(len(paras), 2)
+
 
 if __name__ == "__main__":
     unittest.main()
+

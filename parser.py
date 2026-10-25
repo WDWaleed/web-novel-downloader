@@ -5,6 +5,7 @@ Extracts chapter metadata from the pagination API and cleans chapter body HTML.
 
 import logging
 import re
+import unicodedata
 from dataclasses import dataclass
 from typing import Optional, Sequence, Union
 from urllib.parse import urljoin
@@ -18,6 +19,67 @@ TITLE_PATTERN = re.compile(
     r"^\s*(\d+)\s*vol\.?\s*([\d.]+)\s*chapter\s*[-–—:]?\s*(.*?)\s*$",
     re.IGNORECASE,
 )
+
+# ── Universal Watermark Cleaning Definitions ────────────────────────
+HOMOGLYPHS = str.maketrans({
+    # Cyrillic lookalikes
+    "а": "a", "А": "A", "с": "c", "С": "C", "е": "e", "Е": "E",
+    "о": "o", "О": "O", "р": "p", "Р": "P", "х": "x", "Х": "X",
+    "у": "y", "У": "Y", "і": "i", "І": "I", "г": "g", "Г": "G",
+    "һ": "h", "Һ": "H", "т": "t", "Т": "T", "п": "n", "П": "N",
+    # Greek lookalikes
+    "ο": "o", "Ο": "O", "ν": "v", "Ν": "N", "ε": "e", "ι": "i",
+})
+
+# Any non-letter noise between characters: spaces, underscores, symbols, punctuation
+_SEP = r"(?:[^\w\s]|_|\s)*"
+
+_NOVELIGHT_CORE = (
+    rf"[nN]{_SEP}"
+    rf"[oO0]{_SEP}"
+    rf"[vV]{_SEP}"
+    rf"[eE3]{_SEP}"
+    rf"[lL1|I]{_SEP}"
+    rf"[iI1|!]{_SEP}"
+    rf"[gG9]{_SEP}"
+    rf"[hH]{_SEP}"
+    rf"[tT7]"
+    rf"(?:{_SEP}(?:net|com|org))?"
+)
+
+_ORNAMENT = r"(?:[^\w\s\(\)\[\]\"“'”\n]|_)"
+
+WATERMARK_PATTERN = re.compile(
+    rf"""(?i)
+    # Optional leading symbols/ornaments/brackets
+    (?:{_ORNAMENT}{{1,8}}\s*|[\[\(/\~]\s*)?
+    # The core word novelight in any permutation
+    (?:{_NOVELIGHT_CORE})
+    # Optional trailing symbols/ornaments/brackets
+    (?:\s*{_ORNAMENT}{{1,8}}|\s*[\/\~\]\)])?
+    # Optional trailing parenthetical promo notice
+    (?:\s*\([^\)]*(?:read|copy|source|exclusive|only|novelight|original|site|chapter|stolen)[^\)]*\))?
+    """,
+    re.VERBOSE,
+)
+
+
+def strip_watermarks(text: str) -> str:
+    """
+    Remove all obfuscated Novelight watermarks and attached promotional notes.
+    Handles mathematical unicode, cross-script homoglyphs, zero-width characters,
+    decorative symbols, and attached promotional parentheticals.
+    """
+    if not text:
+        return ""
+    cleaned = re.sub(r"[\u200B-\u200D\uFEFF\u00AD\u2060\u200E\u200F]", "", text)
+    normalized = unicodedata.normalize("NFKD", cleaned)
+    translated = normalized.translate(HOMOGLYPHS)
+    result = WATERMARK_PATTERN.sub("", translated)
+    result = re.sub(r"[ \t]{2,}", " ", result)
+    result = re.sub(r"\s+([,.:;?!—–])", r"\1", result)
+    return result.strip()
+
 
 
 @dataclass
@@ -241,7 +303,9 @@ def clean_chapter_content(content_html: str) -> str:
             text = div.get_text(strip=True).replace("\xa0", "").strip()
             if text:
                 inner_html = div.decode_contents().strip()
-                paragraphs.append(f"<p>{inner_html}</p>")
+                cleaned_html = strip_watermarks(inner_html)
+                if cleaned_html:
+                    paragraphs.append(f"<p>{cleaned_html}</p>")
     else:
         # Fallback to <p> tags if present
         p_tags = container.find_all("p")
@@ -249,13 +313,18 @@ def clean_chapter_content(content_html: str) -> str:
             for p in p_tags:
                 text = p.get_text(strip=True).replace("\xa0", "").strip()
                 if text:
-                    paragraphs.append(f"<p>{p.decode_contents().strip()}</p>")
+                    inner_html = p.decode_contents().strip()
+                    cleaned_html = strip_watermarks(inner_html)
+                    if cleaned_html:
+                        paragraphs.append(f"<p>{cleaned_html}</p>")
         else:
             # Fallback to newline separation
             for line in container.get_text().split("\n"):
                 cleaned = line.strip().replace("\xa0", "").strip()
                 if cleaned:
-                    paragraphs.append(f"<p>{cleaned}</p>")
+                    cleaned_text = strip_watermarks(cleaned)
+                    if cleaned_text:
+                        paragraphs.append(f"<p>{cleaned_text}</p>")
 
     return "\n".join(paragraphs)
 
