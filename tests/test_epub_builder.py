@@ -13,6 +13,7 @@ from epub_builder import (
     extract_next_url_from_file,
     get_saved_chapter_files,
     save_chapter_file,
+    write_pandoc_defaults,
 )
 from parser import Chapter
 
@@ -142,6 +143,33 @@ class TestEpubBuilder(unittest.TestCase):
         )
         self.assertTrue(os.path.exists(epub_path))
         self.assertGreater(os.path.getsize(epub_path), 0)
+
+        # Verify pandoc_defaults.yaml was written in output directory
+        defaults_file = os.path.join(self.test_dir, "pandoc_defaults.yaml")
+        self.assertTrue(os.path.exists(defaults_file))
+
+    def test_write_pandoc_defaults(self):
+        defaults_path = os.path.join(self.test_dir, "test_defaults.yaml")
+        out_epub = os.path.join(self.test_dir, "test.epub")
+        files = ["ch1.html", "ch2.html"]
+        written = write_pandoc_defaults(
+            filepath=defaults_path,
+            output_file=out_epub,
+            input_files=files,
+            toc_depth=2,
+            split_level=2,
+            book_title="Test Book",
+            book_author="Author X",
+            book_language="en",
+        )
+        self.assertTrue(os.path.exists(written))
+        with open(written, "r", encoding="utf-8") as f:
+            content = f.read()
+        self.assertIn("to: epub3", content)
+        self.assertIn("toc-depth: 2", content)
+        self.assertIn("title: \"Test Book\"", content)
+        self.assertIn("input-files:", content)
+        self.assertIn("ch1.html", content)
 
 
 if __name__ == "__main__":

@@ -50,3 +50,4 @@ test.md
 _*.html
 .test_cache/
 watermark_audit_results.md
+pandoc_defaults.yaml

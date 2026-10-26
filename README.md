@@ -19,6 +19,9 @@ A robust, configurable Python CLI tool that downloads web novel chapters from `n
 - **Resume & Caching**:
   - Checks for existing downloaded chapters on disk and skips re-downloading them.
   - Recompiles existing chapters into an EPUB at any time without fetching (`--build-only`).
+- **Large-Novel Pandoc Compilation (1,000+ Chapters)**:
+  - Generates a Pandoc defaults configuration (`output/pandoc_defaults.yaml`) to compile intermediate HTML chapters.
+  - Completely eliminates OS and Windows command-line argument limits (the 32,767 character limit) when compiling thousands of chapters.
 - **Graceful Interruption**:
   - Pressing `Ctrl+C` safely halts scraping and compiles whatever chapters have been downloaded so far into EPUB.
 - **Rich Terminal UI**:
@@ -142,13 +145,15 @@ novelight_scraper/
 ├── scraper.py          # CLI entry point, argument parsing, Rich progress & logging
 ├── styles.css          # E-reader CSS styling for EPUB typography and volume headers
 ├── requirements.txt    # Python dependencies
-├── tests/              # Automated unit tests (30 tests)
+├── tests/              # Automated unit tests (35 tests)
 │   ├── test_fetcher.py
 │   ├── test_parser.py
 │   ├── test_epub_builder.py
-│   └── test_scraper.py
+│   ├── test_scraper.py
+│   └── test_watermark_batch.py
 └── output/             # (Ignored in git)
     ├── chapters/       # Volume-organized chapter HTML files (vol_01/chapter_0001.html)
+    ├── pandoc_defaults.yaml # Generated Pandoc defaults file for large builds
     └── shut_up_malevolent_dragon.epub
 ```
 
