@@ -68,8 +68,8 @@ LEAK_PATTERNS = [
 ]
 
 
-def extract_raw_paragraphs_without_cleaner(content_html: str) -> str:
-    """Extract paragraphs with ads/scripts removed, but without watermark cleaner."""
+def extract_raw_paragraphs_without_cleaner(content_html: str) -> list[str]:
+    """Extract list of paragraph strings with ads/scripts removed, but without watermark cleaner."""
     soup = BeautifulSoup(content_html, "html.parser")
     for junk in soup.select(
         "script, style, noscript, iframe, .advertisment, .advertisement, .ad, .ads, .ad-banner"
@@ -88,7 +88,7 @@ def extract_raw_paragraphs_without_cleaner(content_html: str) -> str:
             t = p.get_text(strip=True).replace("\xa0", "").strip()
             if t:
                 paras.append(p.decode_contents().strip())
-    return "\n".join(paras)
+    return paras
 
 
 def scan_for_leaks(cleaned_html: str) -> list[str]:
@@ -102,11 +102,10 @@ def scan_for_leaks(cleaned_html: str) -> list[str]:
     return leaks
 
 
-def find_watermark_diffs(raw_text: str, cleaned_html: str) -> list[dict]:
-    """Find differences between raw text and cleaned text to identify stripped segments."""
+def find_watermark_diffs(raw_paras: list[str], cleaned_html: str) -> list[dict]:
+    """Find differences between raw paragraphs and cleaned text to identify stripped segments."""
     clean_soup = BeautifulSoup(cleaned_html, "html.parser")
     clean_paras = [p.decode_contents().strip() for p in clean_soup.find_all("p")]
-    raw_paras = [p.strip() for p in raw_text.split("\n") if p.strip()]
 
     diffs: list[dict] = []
     matcher = difflib.SequenceMatcher(None, raw_paras, clean_paras)
@@ -133,25 +132,27 @@ def find_watermark_diffs(raw_text: str, cleaned_html: str) -> list[dict]:
     return diffs
 
 
-def run_watermark_audit(start_ch: int = 11, count: int = 30) -> list[dict]:
-    """Execute the watermark audit for the specified chapter range."""
+def run_watermark_audit(start_ch: int = 1, count: int = 0) -> list[dict]:
+    """Execute the watermark audit for the specified chapter range (count=0 for all available)."""
     os.makedirs(CACHE_DIR, exist_ok=True)
-
-    console.print(
-        Panel.fit(
-            f"[bold cyan]Watermark Verification Test (Chapters {start_ch} to {start_ch + count - 1})[/bold cyan]\n"
-            f"[dim]Book ID:[/dim] {config.BOOK_ID}  |  [dim]Target Count:[/dim] {count}",
-            border_style="cyan",
-            padding=(0, 2),
-        )
-    )
 
     all_chapters = fetch_chapter_index()
     target_chapters = filter_chapters(
         all_chapters,
         free_only=True,
         start_chapter=start_ch,
-        max_chapters=count,
+        max_chapters=count if count > 0 else 0,
+    )
+    total_target = len(target_chapters)
+    end_ch = start_ch + total_target - 1
+
+    console.print(
+        Panel.fit(
+            f"[bold cyan]Watermark Verification Test (Chapters {start_ch} to {end_ch})[/bold cyan]\n"
+            f"[dim]Book ID:[/dim] {config.BOOK_ID}  |  [dim]Target Count:[/dim] {total_target}",
+            border_style="cyan",
+            padding=(0, 2),
+        )
     )
 
     results: list[dict] = []
@@ -163,19 +164,20 @@ def run_watermark_audit(start_ch: int = 11, count: int = 30) -> list[dict]:
             with open(cache_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
         else:
-            console.print(f"[dim]Fetching {idx}/{start_ch + count - 1} (Vol {meta.volume} Ch {meta.chapter_number})...[/dim]")
+            if idx % 25 == 0 or idx == start_ch or idx == end_ch:
+                console.print(f"[dim]Fetching {idx}/{end_ch} (Vol {meta.volume} Ch {meta.chapter_number})...[/dim]")
             url = f"{config.READ_CHAPTER_URL}/{meta.chapter_id}"
             data = fetch_json(url)
             with open(cache_file, "w", encoding="utf-8") as f:
                 json.dump(data, f)
-            sleep_with_jitter(0.6, 0.2)
+            sleep_with_jitter(0.35, 0.15)
 
         content_html = data.get("content", "")
-        raw_text = extract_raw_paragraphs_without_cleaner(content_html)
+        raw_paras = extract_raw_paragraphs_without_cleaner(content_html)
         cleaned_html = clean_chapter_content(content_html)
 
         leaks = scan_for_leaks(cleaned_html)
-        diffs = find_watermark_diffs(raw_text, cleaned_html)
+        diffs = find_watermark_diffs(raw_paras, cleaned_html)
         total_watermarks += len(diffs)
 
         status = "[red]FAIL (Leaks)[/red]" if leaks else "[green]PASS (Clean)[/green]"
@@ -195,7 +197,7 @@ def run_watermark_audit(start_ch: int = 11, count: int = 30) -> list[dict]:
 
     # Print summary table
     table = Table(
-        title=f"Watermark Verification: Chapters {start_ch}–{start_ch + count - 1}",
+        title=f"Watermark Verification: Chapters {start_ch}–{end_ch} (Total: {total_target})",
         show_header=True,
         header_style="bold magenta",
         border_style="bright_black",
@@ -210,7 +212,15 @@ def run_watermark_audit(start_ch: int = 11, count: int = 30) -> list[dict]:
     table.add_column("Leaks", style="bold red", justify="center", no_wrap=True)
     table.add_column("Status", justify="center", no_wrap=True)
 
-    for r in results:
+    # If auditing a very large batch, display chapters with leaks/strips, or sample
+    display_rows = results
+    if len(results) > 100:
+        display_rows = [r for r in results if r["leaks"] or r["watermarks_found"] > 0]
+        # Show first 5 and last 5 if list is too large
+        if len(display_rows) > 60:
+            display_rows = display_rows[:30] + display_rows[-30:]
+
+    for r in display_rows:
         table.add_row(
             str(r["ordinal"]),
             str(r["volume"]),
@@ -223,6 +233,8 @@ def run_watermark_audit(start_ch: int = 11, count: int = 30) -> list[dict]:
 
     console.print()
     console.print(table)
+    if len(results) > 100:
+        console.print(f"[dim](Table condensed for display; full log saved to {AUDIT_REPORT_PATH})[/dim]")
     console.print()
 
     total_leaks = sum(len(r["leaks"]) for r in results)
@@ -240,23 +252,24 @@ def run_watermark_audit(start_ch: int = 11, count: int = 30) -> list[dict]:
 
     # Save detailed markdown report
     with open(AUDIT_REPORT_PATH, "w", encoding="utf-8") as f:
-        f.write(f"# Watermark Audit Report (Chapters {start_ch}–{start_ch + count - 1})\n\n")
+        f.write(f"# Watermark Audit Report (Chapters {start_ch}–{end_ch})\n\n")
         f.write(f"- **Total Chapters Tested**: {len(results)}\n")
         f.write(f"- **Watermarks Detected & Stripped**: {total_watermarks}\n")
         f.write(f"- **Residual Leaks**: {total_leaks}\n\n")
         f.write("## Chapter Excerpt Diff Log\n\n")
 
         for r in results:
-            f.write(f"### Chapter {r['ordinal']} (Vol {r['volume']} Ch {r['chapter_number']}: {r['title']})\n")
-            f.write(f"- **Chapter ID**: `{r['chapter_id']}`\n")
-            f.write(f"- **Watermarks Removed**: {r['watermarks_found']}\n")
-            f.write(f"- **Residual Leaks**: {', '.join(r['leaks']) if r['leaks'] else 'None'}\n")
-            if r["diffs"]:
-                f.write("- **Diff Samples**:\n")
-                for d in r["diffs"]:
-                    f.write(f"  - **Before**: `{d['before']}`\n")
-                    f.write(f"  - **After**:  `{d['after']}`\n")
-            f.write("\n---\n\n")
+            if r["watermarks_found"] > 0 or r["leaks"]:
+                f.write(f"### Chapter {r['ordinal']} (Vol {r['volume']} Ch {r['chapter_number']}: {r['title']})\n")
+                f.write(f"- **Chapter ID**: `{r['chapter_id']}`\n")
+                f.write(f"- **Watermarks Removed**: {r['watermarks_found']}\n")
+                f.write(f"- **Residual Leaks**: {', '.join(r['leaks']) if r['leaks'] else 'None'}\n")
+                if r["diffs"]:
+                    f.write("- **Diff Samples**:\n")
+                    for d in r["diffs"]:
+                        f.write(f"  - **Before**: `{d['before']}`\n")
+                        f.write(f"  - **After**:  `{d['after']}`\n")
+                f.write("\n---\n\n")
 
     logger.info("Saved detailed audit log to %s", AUDIT_REPORT_PATH)
     return results
@@ -273,8 +286,8 @@ class TestWatermarkBatch(unittest.TestCase):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Audit watermark removal on batch chapters")
-    parser.add_argument("--start", type=int, default=11, help="Starting chapter index")
-    parser.add_argument("--count", type=int, default=30, help="Number of chapters to test")
+    parser.add_argument("--start", type=int, default=1, help="Starting chapter index (default: 1)")
+    parser.add_argument("--count", type=int, default=0, help="Number of chapters to test (0 for all)")
     args = parser.parse_args()
 
     run_watermark_audit(start_ch=args.start, count=args.count)
