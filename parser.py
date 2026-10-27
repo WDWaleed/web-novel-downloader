@@ -293,12 +293,98 @@ def parse_chapter_list(
     return chapters
 
 
-def clean_chapter_content(content_html: str) -> str:
+def _normalize_header_str(s: str) -> str:
+    """Normalize string for comparing titles and headers."""
+    s = s.replace("’", "'").replace("‘", "'").replace("“", '"').replace("”", '"')
+    s = s.replace("—", "-").replace("–", "-")
+    s = re.sub(r"[\s\-_–—:.,!?*~#]+", " ", s)
+    return s.strip().lower()
+
+
+def is_redundant_header_paragraph(
+    text: str,
+    meta: Optional[ChapterMeta] = None,
+) -> bool:
+    """
+    Determine if a paragraph at the beginning of a chapter is redundant metadata
+    (e.g., "*Volume 1*", "Chapter 3: Now, I’m going to retaliate in kind.", or duplicate title)
+    that repeats the chapter title or volume already presented in headings/TOC.
+    """
+    clean = text.strip().replace("\xa0", "").strip()
+    if not clean:
+        return False
+
+    # Remove outer markdown/styling symbols like *...*, **...**, _..._, #...
+    stripped = re.sub(r"^[*_~#\s]+|[*_~#\s]+$", "", clean).strip()
+    if not stripped:
+        return False
+
+    # 1. Standalone volume header: e.g. "Volume 1", "*Volume 1*", "Vol. 1", "Vol 1"
+    if re.match(r"^vol(?:ume|\.)?\s*\d+$", stripped, re.I):
+        return True
+
+    # Extract metadata properties if available
+    title = meta.title if meta else ""
+    chapter_number = str(meta.chapter_number) if meta else ""
+    display_title = meta.display_title if meta else ""
+    raw_title = meta.raw_title if meta else ""
+
+    # 2. Standalone chapter header with or without title:
+    # e.g. "Chapter 3: Now, I'm going to retaliate in kind.", "Chap 176: Decision", "Chapter 4"
+    # Matches patterns like "Chapter 3", "Chap 176:", "Ch. 5 - Title", "1 vol. 1 chapter - Title"
+    m_ch = re.match(
+        r"^(?:vol(?:ume|\.)?\s*\d+[\s,.:\-–—]+)?(?:ch(?:apter|ap|\.)?\s*([\d.]+)|(\d+)\s*vol\.?\s*([\d.]+)\s*chapter)\s*(?:[:\-–—]\s*(.*)|$)",
+        stripped,
+        re.I,
+    )
+    if m_ch:
+        ch_num = m_ch.group(1) or m_ch.group(3) or ""
+        rest_title = (m_ch.group(4) or "").strip()
+
+        # If no subtitle following chapter number (e.g. "Chapter 3" or "Chapter 3:"), it's definitely a chapter header
+        if not rest_title:
+            return True
+
+        # If chapter number in text matches meta
+        if chapter_number and ch_num == chapter_number:
+            return True
+
+        # If rest_title matches chapter title
+        if title:
+            norm_rest = _normalize_header_str(rest_title)
+            norm_title = _normalize_header_str(title)
+            if norm_rest == norm_title or norm_title.endswith(norm_rest) or norm_rest.endswith(norm_title):
+                return True
+
+        # Heuristic for single-line header without meta:
+        # Short string (<150 chars) with a colon or dash after chapter designation, or not a full sentence
+        if len(clean) < 150 and not rest_title.endswith((".", "!", "?")):
+            return True
+        if len(clean) < 150 and any(sep in clean[:25] for sep in (":", "-", "–", "—")):
+            return True
+
+    # 3. Exact match with chapter title, display title, or raw title
+    norm_clean = _normalize_header_str(stripped)
+    if title and norm_clean == _normalize_header_str(title):
+        return True
+    if display_title and norm_clean == _normalize_header_str(display_title):
+        return True
+    if raw_title and norm_clean == _normalize_header_str(raw_title):
+        return True
+
+    return False
+
+
+def clean_chapter_content(
+    content_html: str,
+    meta: Optional[ChapterMeta] = None,
+) -> str:
     """
     Clean the HTML content returned by the read-chapter API:
     - Removes inline advertisement blocks (`div.advertisment`, `.ad`, etc.).
     - Removes scripts, styles, iframes.
     - Extracts paragraph blocks and wraps in clean <p>...</p> tags.
+    - Removes redundant volume and chapter title paragraphs at the start of the chapter.
     """
     if not content_html:
         return ""
@@ -315,7 +401,7 @@ def clean_chapter_content(content_html: str) -> str:
     container = soup.select_one("div.chapter-text") or soup
 
     # 2. Extract paragraph blocks
-    paragraphs: list[str] = []
+    raw_paragraphs: list[tuple[str, str]] = []
 
     # Novelight wraps paragraphs in top-level <div> tags inside div.chapter-text
     child_divs = container.find_all("div", recursive=False)
@@ -327,7 +413,10 @@ def clean_chapter_content(content_html: str) -> str:
                 inner_html = div.decode_contents().strip()
                 cleaned_html = strip_watermarks(inner_html)
                 if cleaned_html:
-                    paragraphs.append(f"<p>{cleaned_html}</p>")
+                    clean_soup = BeautifulSoup(cleaned_html, "html.parser")
+                    clean_text = clean_soup.get_text(strip=True).replace("\xa0", "").strip()
+                    if clean_text:
+                        raw_paragraphs.append((clean_text, cleaned_html))
     else:
         # Fallback to <p> tags if present
         p_tags = container.find_all("p")
@@ -338,7 +427,10 @@ def clean_chapter_content(content_html: str) -> str:
                     inner_html = p.decode_contents().strip()
                     cleaned_html = strip_watermarks(inner_html)
                     if cleaned_html:
-                        paragraphs.append(f"<p>{cleaned_html}</p>")
+                        clean_soup = BeautifulSoup(cleaned_html, "html.parser")
+                        clean_text = clean_soup.get_text(strip=True).replace("\xa0", "").strip()
+                        if clean_text:
+                            raw_paragraphs.append((clean_text, cleaned_html))
         else:
             # Fallback to newline separation
             for line in container.get_text().split("\n"):
@@ -346,9 +438,17 @@ def clean_chapter_content(content_html: str) -> str:
                 if cleaned:
                     cleaned_text = strip_watermarks(cleaned)
                     if cleaned_text:
-                        paragraphs.append(f"<p>{cleaned_text}</p>")
+                        raw_paragraphs.append((cleaned_text, cleaned_text))
 
-    return "\n".join(paragraphs)
+    # 3. Strip redundant leading volume and chapter title paragraphs
+    while raw_paragraphs:
+        plain_text, _ = raw_paragraphs[0]
+        if is_redundant_header_paragraph(plain_text, meta=meta):
+            raw_paragraphs.pop(0)
+        else:
+            break
+
+    return "\n".join(f"<p>{html}</p>" for _, html in raw_paragraphs)
 
 
 def is_chapter_content_empty(content_html: str) -> bool:
@@ -373,7 +473,7 @@ def parse_chapter(
     """
     Parse chapter content HTML and construct a Chapter instance.
     """
-    body_html = clean_chapter_content(content_html)
+    body_html = clean_chapter_content(content_html, meta=meta)
     return Chapter(
         meta=meta,
         body_html=body_html,

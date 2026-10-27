@@ -8,6 +8,7 @@ from parser import (
     Chapter,
     ChapterMeta,
     clean_chapter_content,
+    is_redundant_header_paragraph,
     is_chapter_content_empty,
     normalize_title,
     parse_chapter,
@@ -137,13 +138,101 @@ class TestParser(unittest.TestCase):
         </div>
         """
         cleaned = clean_chapter_content(content_html)
-        self.assertIn("<p><strong>*Volume 1*</strong></p>", cleaned)
+        # Redundant volume header should be stripped
+        self.assertNotIn("*Volume 1*", cleaned)
+        self.assertNotIn("Volume 1", cleaned)
         self.assertIn("<p>In the damp and shadowy dungeon, Leon was bound.</p>", cleaned)
         self.assertIn("<p>His shattered armor barely clung to his body.</p>", cleaned)
         self.assertNotIn("advertisment", cleaned)
         self.assertNotIn("Ad content", cleaned)
         self.assertNotIn("Banner", cleaned)
         self.assertNotIn("var x = 1", cleaned)
+
+    def test_clean_chapter_content_removes_redundant_chapter_title(self):
+        # Chapter 3 scenario: Content starts with "Chapter 3: Now, I’m going to retaliate in kind."
+        meta = ChapterMeta(
+            chapter_id="150475",
+            volume=1,
+            chapter_number="3",
+            title="Now, I’m going to retaliate in kind.",
+            raw_title="1 vol. 3 chapter - Now, I’m going to retaliate in kind.",
+            url="https://novelight.net/book/chapter/150475",
+            is_locked=False,
+        )
+        content_html = """
+        <div class="chapter-text">
+            <div><strong>Chapter 3: Now, I’m going to retaliate in kind.</strong></div>
+            <div>Leon was unsure what expression to use when facing this little girl.</div>
+        </div>
+        """
+        cleaned = clean_chapter_content(content_html, meta=meta)
+        self.assertNotIn("Chapter 3: Now, I’m going to retaliate in kind.", cleaned)
+        self.assertEqual(
+            cleaned,
+            "<p>Leon was unsure what expression to use when facing this little girl.</p>",
+        )
+
+    def test_clean_chapter_content_removes_chapter_4_style_duplicate(self):
+        # Chapter 4 scenario
+        meta = ChapterMeta(
+            chapter_id="150499",
+            volume=1,
+            chapter_number="4",
+            title="Carve my mark on you.",
+            raw_title="1 vol. 4 chapter - Carve my mark on you.",
+            url="https://novelight.net/book/chapter/150499",
+            is_locked=False,
+        )
+        content_html = """
+        <div class="chapter-text">
+            <div><strong>Chapter 4: Carve my mark on you.</strong></div>
+            <div>The dragon race’s concept of “revenge” had always puzzled human scholars.</div>
+        </div>
+        """
+        cleaned = clean_chapter_content(content_html, meta=meta)
+        self.assertNotIn("Chapter 4: Carve my mark on you.", cleaned)
+        self.assertIn("The dragon race’s concept of “revenge” had always puzzled human scholars.", cleaned)
+
+    def test_clean_chapter_content_removes_exact_title_duplicate(self):
+        # Chapter 207 scenario: exact duplicate of title without "Chapter X:"
+        meta = ChapterMeta(
+            chapter_id="150607",
+            volume=2,
+            chapter_number="12",
+            title="A Mark Is a Mark, No Need to Reason With You",
+            raw_title="2 vol. 12 chapter - A Mark Is a Mark, No Need to Reason With You",
+            url="https://novelight.net/book/chapter/150607",
+            is_locked=False,
+        )
+        content_html = """
+        <div class="chapter-text">
+            <div>A Mark Is a Mark, No Need to Reason With You</div>
+            <div>Leon lay on the bed, staring blankly at the hotel ceiling.</div>
+        </div>
+        """
+        cleaned = clean_chapter_content(content_html, meta=meta)
+        self.assertEqual(cleaned, "<p>Leon lay on the bed, staring blankly at the hotel ceiling.</p>")
+
+    def test_clean_chapter_content_preserves_legitimate_prose(self):
+        # Chapter 2 scenario: content starts directly with prose
+        meta = ChapterMeta(
+            chapter_id="150474",
+            volume=1,
+            chapter_number="2",
+            title="You’re awake? Now you’re already a dad!",
+            raw_title="1 vol. 2 chapter - You’re awake? Now you’re already a dad!",
+            url="https://novelight.net/book/chapter/150474",
+            is_locked=False,
+        )
+        content_html = """
+        <div class="chapter-text">
+            <div>Reflecting on the life of Leon Casmode, it was indeed a brief journey.</div>
+            <div>Leon bare-handedly vanquished a neighbour's ferocious dog.</div>
+        </div>
+        """
+        cleaned = clean_chapter_content(content_html, meta=meta)
+        self.assertIn("<p>Reflecting on the life of Leon Casmode, it was indeed a brief journey.</p>", cleaned)
+        self.assertIn("<p>Leon bare-handedly vanquished a neighbour's ferocious dog.</p>", cleaned)
 
     def test_is_chapter_content_empty(self):
         self.assertTrue(is_chapter_content_empty(""))
