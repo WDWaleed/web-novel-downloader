@@ -12,6 +12,7 @@ from epub_builder import (
     build_epub,
     extract_next_url_from_file,
     get_saved_chapter_files,
+    sanitize_saved_chapter_file,
     save_chapter_file,
     write_pandoc_defaults,
 )
@@ -170,6 +171,34 @@ class TestEpubBuilder(unittest.TestCase):
         self.assertIn("title: \"Test Book\"", content)
         self.assertIn("input-files:", content)
         self.assertIn("ch1.html", content)
+
+
+    def test_sanitize_saved_chapter_file(self):
+        ch_path = os.path.join(self.test_dir, "chapter_0003.html")
+        html = """<!DOCTYPE html>
+<html>
+<head><title>Vol. 1 Ch. 3 - Now, I’m going to retaliate in kind.</title></head>
+<body>
+<h2>Vol. 1 Ch. 3 - Now, I’m going to retaliate in kind.</h2>
+<p><strong>Chapter 3: Now, I’m going to retaliate in kind.</strong></p>
+<p>Leon was unsure what expression to use.</p>
+</body>
+</html>"""
+        with open(ch_path, "w", encoding="utf-8") as f:
+            f.write(html)
+
+        # First run: should modify and remove redundant header
+        modified = sanitize_saved_chapter_file(ch_path)
+        self.assertTrue(modified)
+
+        with open(ch_path, "r", encoding="utf-8") as f:
+            cleaned = f.read()
+
+        self.assertNotIn("Chapter 3: Now, I’m going to retaliate in kind.", cleaned)
+        self.assertIn("Leon was unsure what expression to use.", cleaned)
+
+        # Second run: file is already clean, should return False without modifying
+        self.assertFalse(sanitize_saved_chapter_file(ch_path))
 
 
 if __name__ == "__main__":

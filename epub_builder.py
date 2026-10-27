@@ -12,6 +12,7 @@ import subprocess
 from typing import Optional, Sequence
 
 import pypandoc
+from bs4 import BeautifulSoup
 
 from config import (
     BOOK_AUTHOR,
@@ -21,7 +22,12 @@ from config import (
     EPUB_FILENAME,
     OUTPUT_DIR,
 )
-from parser import Chapter, normalize_title
+from parser import (
+    Chapter,
+    ChapterMeta,
+    is_redundant_header_paragraph,
+    normalize_title,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +138,63 @@ def ensure_chapter_title_normalized(filepath: str, chapter_num: int) -> None:
             )
     except Exception as exc:
         logger.debug("Failed normalizing title in %s: %s", filepath, exc)
+
+
+def sanitize_saved_chapter_file(filepath: str) -> bool:
+    """
+    Check a saved chapter HTML file and remove redundant volume or chapter title paragraphs
+    that duplicate the chapter's <h1>/<h2> heading.
+    Returns True if the file was modified, False otherwise.
+    """
+    if not os.path.isfile(filepath) or "title.html" in filepath:
+        return False
+    try:
+        with open(filepath, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        soup = BeautifulSoup(content, "html.parser")
+        heading = soup.find(["h1", "h2"])
+        if not heading:
+            return False
+        h_text = heading.get_text(strip=True)
+
+        vol = 0
+        ch = ""
+        title = ""
+        m_head = re.match(r"^Vol\.?\s*(\d+)\s*Ch\.?\s*([\d.]+)(?:\s*-\s*(.*))?$", h_text, re.I)
+        if m_head:
+            vol = int(m_head.group(1))
+            ch = m_head.group(2)
+            title = m_head.group(3) or ""
+
+        meta = ChapterMeta(
+            chapter_id="0",
+            volume=vol,
+            chapter_number=ch,
+            title=title,
+            raw_title="",
+            url="",
+            is_locked=False,
+        )
+
+        paragraphs = soup.body.find_all("p", recursive=False) if soup.body else soup.find_all("p")
+        removed_any = False
+        for p in paragraphs:
+            ptxt = p.get_text(strip=True)
+            if is_redundant_header_paragraph(ptxt, meta=meta):
+                p.decompose()
+                removed_any = True
+            else:
+                break
+
+        if removed_any:
+            with open(filepath, "w", encoding="utf-8") as f:
+                f.write(str(soup))
+            logger.info("Sanitized redundant headers in %s", os.path.basename(filepath))
+            return True
+    except Exception as exc:
+        logger.debug("Failed sanitizing saved chapter in %s: %s", filepath, exc)
+    return False
 
 
 def save_chapter_file(
@@ -297,7 +360,11 @@ def build_epub(
     if not files_to_compile:
         raise ValueError("No chapter files found or provided to build EPUB.")
 
-    # 2. Check if chapters are organized by volumes
+    # 2. Sanitize any saved chapter files (strips redundant headers even from prior downloads)
+    for f in files_to_compile:
+        sanitize_saved_chapter_file(f)
+
+    # 3. Check if chapters are organized by volumes
     has_volumes = any(re.search(r"vol_\d+", f, re.IGNORECASE) for f in files_to_compile)
 
     final_file_list: list[str] = []
