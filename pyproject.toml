@@ -1,0 +1,10 @@
+[project]
+name = "25-novelight-wn-downloader"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = [
+    "beautifulsoup4>=4.12.0",
+    "pypandoc>=1.13",
+    "requests>=2.31.0",
+    "rich>=13.0.0",
+]
