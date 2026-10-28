@@ -6,7 +6,7 @@ Extracts chapter metadata from the pagination API and cleans chapter body HTML.
 import logging
 import re
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional, Sequence, Union
 from urllib.parse import urljoin
 
@@ -123,6 +123,46 @@ class ChapterMeta:
         if self.title:
             return f"Vol. {self.volume} Ch. {self.chapter_number} - {self.title}"
         return f"Vol. {self.volume} Ch. {self.chapter_number}"
+
+
+@dataclass
+class NovelInfo:
+    """Metadata and chapter statistics for a novel on Novelight."""
+    url: str
+    book_id: str
+    title: str
+    first_chapter_id: str
+    author: str = ""
+    alternative_title: str = ""
+    status: str = ""
+    translation_status: str = ""
+    novel_type: str = ""
+    country: str = ""
+    release_year: str = ""
+    genres: list[str] = field(default_factory=list)
+    tags: list[str] = field(default_factory=list)
+    rating: str = ""
+    rating_count: str = ""
+    description: str = ""
+    cover_url: str = ""
+    translators: list[str] = field(default_factory=list)
+    loaded_chapters: int = 0
+    # Dynamic chapter statistics (populated when chapter index is fetched)
+    total_chapters: int = 0
+    free_chapters_count: int = 0
+    locked_chapters_count: int = 0
+    free_chapter_range: str = ""
+    locked_chapter_range: str = ""
+    volumes_count: int = 0
+    first_chapter_title: str = ""
+    latest_chapter_title: str = ""
+
+    @property
+    def free_percentage(self) -> float:
+        """Percentage of total chapters that are currently free/unlocked."""
+        if self.total_chapters == 0:
+            return 0.0
+        return (self.free_chapters_count / self.total_chapters) * 100.0
 
 
 @dataclass
@@ -291,6 +331,175 @@ def parse_chapter_list(
         )
 
     return chapters
+
+
+def parse_novel_info(
+    html: str,
+    url: str = "",
+    base_url: str = "https://novelight.net",
+) -> NovelInfo:
+    """
+    Parse a novel overview page HTML from Novelight.
+    Extracts book identity (id, first chapter id), metadata (title, author, genres, tags, description, etc.),
+    and summary info.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+
+    # 1. Title extraction
+    title = ""
+    h1 = soup.select_one("h1.clamp") or soup.find("h1")
+    if h1:
+        title = h1.get_text(separator=" ", strip=True)
+    if not title:
+        m_title = re.search(r'const\s+BOOK_TITLE\s*=\s*[\'"]([^\'"]+)[\'"]', html)
+        if m_title:
+            title = m_title.group(1).strip()
+    if not title:
+        og_title = soup.select_one('meta[property="og:title"]')
+        if og_title and og_title.get("content"):
+            title = og_title["content"].strip()
+    if not title and soup.title:
+        title_str = soup.title.get_text(strip=True)
+        title_str = re.sub(r"^[^\w\s]+\s*", "", title_str)
+        title_str = re.sub(r"\s*-\s*Read Online Free.*$", "", title_str, flags=re.I)
+        title_str = re.sub(r"\s*·\s*Novelight.*$", "", title_str, flags=re.I)
+        title = title_str.strip()
+
+    # 2. Book ID extraction
+    book_id = ""
+    m_bid = re.search(r'const\s+BOOK_ID\s*=\s*[\'"](\d+)[\'"]', html)
+    if m_bid:
+        book_id = m_bid.group(1)
+    if not book_id:
+        m_ob = re.search(r'const\s+OBJECT_BY_COMMENT\s*=\s*(\d+)', html)
+        if m_ob:
+            book_id = m_ob.group(1)
+    if not book_id:
+        m_rate = re.search(r'/book/ajax/rate-book/(\d+)', html)
+        if m_rate:
+            book_id = m_rate.group(1)
+
+    # 3. First Chapter ID extraction (for pagination query and initial reading)
+    first_chapter_id = ""
+    read_btn = soup.select_one("a.read-btn")
+    if read_btn and read_btn.get("href"):
+        m_ch = re.search(r"/book/chapter/(\d+)", read_btn["href"])
+        if m_ch:
+            first_chapter_id = m_ch.group(1)
+    if not first_chapter_id:
+        for a in soup.select("a[href*='/book/chapter/']"):
+            m_ch = re.search(r"/book/chapter/(\d+)", a.get("href", ""))
+            if m_ch:
+                first_chapter_id = m_ch.group(1)
+                break
+
+    # 4. Cover URL
+    cover_url = ""
+    poster_img = soup.select_one(".poster img")
+    if poster_img:
+        cover_url = poster_img.get("src") or poster_img.get("data-src") or ""
+    if not cover_url:
+        page_panel = soup.select_one(".page-panel")
+        if page_panel and page_panel.get("style"):
+            m_bg = re.search(r'url\((.*?)\)', page_panel["style"])
+            if m_bg:
+                cover_url = m_bg.group(1).strip("\"' ")
+    if not cover_url:
+        og_img = soup.select_one('meta[property="og:image"]')
+        if og_img and og_img.get("content"):
+            cover_url = og_img["content"].strip()
+    if cover_url:
+        cover_url = urljoin(base_url, cover_url)
+
+    # 5. Rating & Rating count
+    rating = ""
+    rating_count = ""
+    appr = soup.select_one(".block.appreciate")
+    if appr:
+        txt_el = appr.select_one(".text")
+        cnt_el = appr.select_one("span")
+        if txt_el:
+            rating = txt_el.get_text(separator=" ", strip=True)
+            rating = re.sub(r"^\s*", "", rating).strip()
+        if cnt_el:
+            rating_count = cnt_el.get_text(strip=True).strip("()")
+
+    # 6. Mini-info attributes
+    author = ""
+    alt_title = ""
+    status = ""
+    trans_status = ""
+    novel_type = ""
+    country = ""
+    year = ""
+    genres: list[str] = []
+    loaded_ch = 0
+
+    for item in soup.select(".mini-info .item"):
+        sub = item.select_one(".sub-header")
+        info = item.select_one(".info")
+        if not sub or not info:
+            continue
+        sub_txt = sub.get_text(strip=True).lower()
+        info_txt = info.get_text(" ", strip=True)
+        if "status" in sub_txt:
+            status = info_txt
+        elif "translation" in sub_txt:
+            trans_status = info_txt
+        elif "type" in sub_txt:
+            novel_type = info_txt
+        elif "country" in sub_txt:
+            country = info_txt
+        elif "year" in sub_txt:
+            year = info_txt
+        elif "author" in sub_txt:
+            author = info_txt
+        elif "alternative" in sub_txt:
+            alt_title = info_txt
+        elif "loaded chapters" in sub_txt:
+            digits = re.sub(r"\D", "", info_txt)
+            if digits:
+                loaded_ch = int(digits)
+        elif "genres" in sub_txt:
+            genres = [a.get_text(strip=True) for a in info.find_all("a")]
+
+    # 7. Tags
+    tags = [a.get_text(strip=True) for a in soup.select("section.tags a")]
+
+    # 8. Translators / Teams
+    translators = [t.get_text(strip=True) for t in soup.select(".translators .translator .name")]
+
+    # 9. Description / Synopsis
+    desc_paragraphs: list[str] = []
+    info_sec = soup.select_one("#information section.text-info")
+    if info_sec:
+        for p in info_sec.find_all("p"):
+            t = p.get_text(strip=True)
+            if t:
+                desc_paragraphs.append(t)
+    description = "\n\n".join(desc_paragraphs)
+
+    return NovelInfo(
+        url=url,
+        book_id=book_id,
+        title=title,
+        first_chapter_id=first_chapter_id,
+        author=author,
+        alternative_title=alt_title,
+        status=status,
+        translation_status=trans_status,
+        novel_type=novel_type,
+        country=country,
+        release_year=year,
+        genres=genres,
+        tags=tags,
+        rating=rating,
+        rating_count=rating_count,
+        description=description,
+        cover_url=cover_url,
+        translators=translators,
+        loaded_chapters=loaded_ch,
+    )
 
 
 def _normalize_header_str(s: str) -> str:

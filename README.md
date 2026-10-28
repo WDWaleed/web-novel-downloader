@@ -63,6 +63,11 @@ pip install -r requirements.txt
 ## 🛠️ Usage
 
 ### Quick Start
+Fetch rich novel info and check chapter availability without downloading:
+```powershell
+python scraper.py --info https://novelight.net/book/shut-up-malevolent-dragon-i-dont-want-to-have-any-more-children-with-you
+```
+
 Preview all available chapters without downloading:
 ```powershell
 python scraper.py --list-only
@@ -77,6 +82,8 @@ python scraper.py
 
 | Argument | Shorthand | Default | Description |
 |---|---|---|---|
+| `--info` | `--fetch-info`, `--novel-info` | `False` | Fetch and display novel details & chapter availability without downloading (accepts optional URL) |
+| `--url` | `--book-url` | `None` | Novel URL on novelight.net (e.g. `https://novelight.net/book/<slug>`) |
 | `--book-id` | `--novel-id` | `337` | Book ID on novelight.net |
 | `--free-only` | | `True` | Only download free (unlocked) chapters |
 | `--include-locked` | | `False` | Attempt to download locked chapters as well |

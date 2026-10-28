@@ -45,9 +45,13 @@ htmlcov/
 implementation.md
 future-features.md
 test.md
+gui_client.md
 
 # Temporary scratch HTML files
 _*.html
 .test_cache/
 watermark_audit_results.md
 pandoc_defaults.yaml
+
+# Pending commit instructions
+changes_to_commit*

@@ -9,6 +9,7 @@ import argparse
 import logging
 import os
 import sys
+from collections import defaultdict
 from typing import Optional, Sequence
 
 from rich import print as rprint
@@ -34,13 +35,15 @@ from epub_builder import (
     get_saved_chapter_files,
     save_chapter_file,
 )
-from fetcher import fetch_json, sleep_with_jitter
+from fetcher import fetch_json, fetch_page, sleep_with_jitter
 from parser import (
     Chapter,
     ChapterMeta,
+    NovelInfo,
     is_chapter_content_empty,
     parse_chapter,
     parse_chapter_list,
+    parse_novel_info,
 )
 
 # Ensure UTF-8 output on Windows consoles to prevent UnicodeEncodeError
@@ -86,6 +89,245 @@ def fetch_chapter_index(
     return list(reversed(chapters))
 
 
+def normalize_novel_url(url_or_slug: str, base_url: str = config.BASE_URL) -> str:
+    """Normalize a novel URL, path, or slug into a canonical Novelight book URL."""
+    url = url_or_slug.strip()
+    if not url:
+        return config.BOOK_URL
+    if url.startswith("http://") or url.startswith("https://"):
+        return url
+    if url.startswith("/book/"):
+        return f"{base_url.rstrip('/')}{url}"
+    if url.startswith("/"):
+        return f"{base_url.rstrip('/')}{url}"
+    return f"{base_url.rstrip('/')}/book/{url}"
+
+
+def fetch_novel_details(
+    url_or_slug: str,
+    base_url: str = config.BASE_URL,
+) -> tuple[NovelInfo, list[ChapterMeta]]:
+    """
+    Fetch the novel overview page HTML and the full chapter pagination index.
+    Returns the enriched NovelInfo and the chronological list of all chapters.
+    """
+    canonical_url = normalize_novel_url(url_or_slug, base_url=base_url)
+    html = fetch_page(canonical_url)
+    info = parse_novel_info(html, url=canonical_url, base_url=base_url)
+
+    chapters: list[ChapterMeta] = []
+    if info.book_id and info.first_chapter_id:
+        chapters = fetch_chapter_index(
+            book_id=info.book_id,
+            chapter_id=info.first_chapter_id,
+        )
+
+    # Compute chapter statistics
+    info.total_chapters = len(chapters)
+    free_chapters = [ch for ch in chapters if not ch.is_locked]
+    locked_chapters = [ch for ch in chapters if ch.is_locked]
+    info.free_chapters_count = len(free_chapters)
+    info.locked_chapters_count = len(locked_chapters)
+
+    if chapters:
+        info.first_chapter_title = chapters[0].display_title
+        info.latest_chapter_title = chapters[-1].display_title
+        info.volumes_count = len(set(ch.volume for ch in chapters if ch.volume > 0))
+
+    if free_chapters:
+        info.free_chapter_range = (
+            f"Ch. {free_chapters[0].chapter_number} - Ch. {free_chapters[-1].chapter_number} "
+            f"({len(free_chapters):,} chapters)"
+        )
+    if locked_chapters:
+        info.locked_chapter_range = (
+            f"Ch. {locked_chapters[0].chapter_number} - Ch. {locked_chapters[-1].chapter_number} "
+            f"({len(locked_chapters):,} chapters)"
+        )
+
+    return info, chapters
+
+
+def display_novel_info(info: NovelInfo, chapters: Optional[list[ChapterMeta]] = None) -> None:
+    """Render rich terminal view of novel details and chapter availability."""
+    console.print()
+    console.print(
+        Panel(
+            f"[bold cyan]{info.title}[/bold cyan]\n"
+            + (f"[dim italic]{info.alternative_title}[/dim italic]\n" if info.alternative_title else "")
+            + f"[dim]URL:[/dim] [cyan]{info.url}[/cyan]",
+            title="[bold magenta]Novel Overview[/bold magenta]",
+            border_style="cyan",
+            padding=(1, 2),
+        )
+    )
+
+    # Metadata Grid Table
+    meta_table = Table(show_header=False, box=None, padding=(0, 2))
+    meta_table.add_column("Field", style="bold yellow", no_wrap=True)
+    meta_table.add_column("Value", style="white")
+
+    meta_table.add_row("Author", info.author or "Unknown")
+    if info.novel_type or info.country or info.release_year:
+        type_parts = [p for p in (info.novel_type, info.country, info.release_year) if p]
+        meta_table.add_row("Classification", " • ".join(type_parts))
+    if info.status or info.translation_status:
+        status_str = f"[green]{info.status}[/green]" if info.status else ""
+        if info.translation_status:
+            status_str += f" (Translation: {info.translation_status})"
+        meta_table.add_row("Status", status_str)
+    if info.rating:
+        rating_str = f"[gold1]⭐ {info.rating}[/gold1]"
+        if info.rating_count:
+            rating_str += f" [dim]({info.rating_count} ratings)[/dim]"
+        meta_table.add_row("Rating", rating_str)
+    if info.translators:
+        meta_table.add_row("Translators", ", ".join(info.translators))
+    if info.genres:
+        meta_table.add_row("Genres", " • ".join(f"[cyan]{g}[/cyan]" for g in info.genres))
+    if info.tags:
+        tag_disp = " • ".join(f"[dim]{t}[/dim]" for t in info.tags[:12])
+        if len(info.tags) > 12:
+            tag_disp += f" [dim](+{len(info.tags) - 12} more)[/dim]"
+        meta_table.add_row("Tags", tag_disp)
+    if info.cover_url:
+        meta_table.add_row("Cover URL", f"[dim]{info.cover_url}[/dim]")
+
+    console.print(
+        Panel(
+            meta_table,
+            title="[bold magenta]Details & Metadata[/bold magenta]",
+            border_style="bright_black",
+            padding=(0, 1),
+        )
+    )
+
+    # Chapter Availability Table
+    avail_table = Table(
+        title="Chapter & Download Availability",
+        header_style="bold magenta",
+        border_style="bright_black",
+        expand=False,
+        padding=(0, 2),
+    )
+    avail_table.add_column("Metric", style="bold cyan")
+    avail_table.add_column("Details", style="white")
+
+    total_str = f"[bold cyan]{info.total_chapters:,}[/bold cyan]" if info.total_chapters else str(info.loaded_chapters or "Unknown")
+    avail_table.add_row("Total Chapters", total_str)
+
+    if info.total_chapters:
+        avail_table.add_row(
+            "Free / Downloadable",
+            f"[bold green]{info.free_chapters_count:,} chapters ({info.free_percentage:.1f}% free)[/bold green]",
+        )
+        avail_table.add_row(
+            "Locked / Premium",
+            f"[bold red]{info.locked_chapters_count:,} chapters[/bold red]",
+        )
+    else:
+        avail_table.add_row("Free / Downloadable", "[green]Unknown[/green]")
+        avail_table.add_row("Locked / Premium", "[dim]Unknown[/dim]")
+
+    if info.free_chapter_range:
+        avail_table.add_row("Free Range", f"[green]{info.free_chapter_range}[/green]")
+    if info.locked_chapter_range:
+        avail_table.add_row("Locked Range", f"[yellow]{info.locked_chapter_range}[/yellow]")
+    if info.volumes_count:
+        avail_table.add_row("Volumes", f"[yellow]{info.volumes_count} volumes[/yellow]")
+    if info.first_chapter_title:
+        avail_table.add_row("First Chapter", info.first_chapter_title)
+    if info.latest_chapter_title:
+        avail_table.add_row("Latest Chapter", info.latest_chapter_title)
+
+    avail_table.add_row(
+        "API Identifiers",
+        f"[dim]Book ID:[/dim] [yellow]{info.book_id}[/yellow]  [dim]|  First Chapter ID:[/dim] [yellow]{info.first_chapter_id}[/yellow]",
+    )
+
+    console.print(avail_table)
+
+    # Volume Breakdown Table (if multiple volumes)
+    if chapters and info.volumes_count > 1:
+        vol_groups: dict[int, list[ChapterMeta]] = defaultdict(list)
+        for ch in chapters:
+            if ch.volume > 0:
+                vol_groups[ch.volume].append(ch)
+
+        if vol_groups:
+            vol_table = Table(
+                title="Volume Breakdown",
+                header_style="bold magenta",
+                border_style="bright_black",
+                expand=False,
+                padding=(0, 1),
+            )
+            vol_table.add_column("Volume", style="yellow", justify="center")
+            vol_table.add_column("Total Chapters", style="cyan", justify="right")
+            vol_table.add_column("Free Chapters", style="green", justify="right")
+            vol_table.add_column("Locked Chapters", style="red", justify="right")
+            vol_table.add_column("Availability", style="bold", justify="center")
+
+            for vol_num in sorted(vol_groups.keys()):
+                v_chs = vol_groups[vol_num]
+                v_free = sum(1 for c in v_chs if not c.is_locked)
+                v_locked = sum(1 for c in v_chs if c.is_locked)
+                if v_locked == 0:
+                    status = "[bold green]100% Free[/bold green]"
+                elif v_free == 0:
+                    status = "[bold red]All Locked[/bold red]"
+                else:
+                    pct = (v_free / len(v_chs)) * 100
+                    status = f"[yellow]{pct:.0f}% Free[/yellow]"
+                vol_table.add_row(
+                    f"Vol. {vol_num}",
+                    f"{len(v_chs):,}",
+                    f"{v_free:,}",
+                    f"{v_locked:,}",
+                    status,
+                )
+            console.print()
+            console.print(vol_table)
+
+    # Synopsis Panel
+    if info.description:
+        console.print()
+        console.print(
+            Panel(
+                info.description,
+                title="[bold magenta]Synopsis[/bold magenta]",
+                border_style="bright_black",
+                padding=(1, 2),
+            )
+        )
+
+    # Download suggestions guide
+    console.print()
+    console.print(
+        Panel(
+            f"[bold]To download all free chapters of this novel:[/bold]\n"
+            f"  [cyan]python scraper.py --url \"{info.url}\"[/cyan]\n\n"
+            f"[bold]To download specific volume(s) (e.g. Volume 1):[/bold]\n"
+            f"  [cyan]python scraper.py --url \"{info.url}\" --volumes 1[/cyan]\n\n"
+            f"[bold]To preview chapter index table:[/bold]\n"
+            f"  [cyan]python scraper.py --url \"{info.url}\" --list-only[/cyan]",
+            title="[bold green]Download Command Guide[/bold green]",
+            border_style="green",
+            padding=(0, 2),
+        )
+    )
+    console.print()
+
+
+def display_novel_info_flow(url_or_slug: str) -> None:
+    """Fetch and display novel details with rich progress spinner."""
+    canonical_url = normalize_novel_url(url_or_slug)
+    with console.status(f"[bold cyan]Fetching novel details from {canonical_url}...[/bold cyan]", spinner="dots"):
+        info, chapters = fetch_novel_details(canonical_url)
+
+    display_novel_info(info, chapters)
+
+
 def filter_chapters(
     chapters: list[ChapterMeta],
     free_only: bool = True,
@@ -126,6 +368,24 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     )
 
     # Target Novel
+    parser.add_argument(
+        "--url",
+        "--book-url",
+        dest="url",
+        type=str,
+        default=None,
+        help="Novel URL on novelight.net (e.g. https://novelight.net/book/<slug>)",
+    )
+    parser.add_argument(
+        "--info",
+        "--fetch-info",
+        "--novel-info",
+        dest="fetch_info",
+        nargs="?",
+        const=True,
+        default=False,
+        help="Fetch and display novel details & chapter availability without downloading (optional: specify novel URL)",
+    )
     parser.add_argument(
         "--book-id",
         "--novel-id",
@@ -353,6 +613,29 @@ def _build_chapter_table(rows: list[dict]) -> Table:
 
 def scrape_novel(args: argparse.Namespace) -> None:
     """Execute the scraping workflow with the provided arguments."""
+    # Phase 0: Novel Info fetch mode
+    if getattr(args, "fetch_info", False):
+        target_url = (
+            args.fetch_info
+            if isinstance(args.fetch_info, str)
+            else (args.url or config.BOOK_URL)
+        )
+        display_novel_info_flow(target_url)
+        return
+
+    # If novel URL is specified for downloading, auto-fetch details to resolve IDs
+    if getattr(args, "url", None):
+        with console.status("[bold cyan]Fetching novel details from URL...[/bold cyan]", spinner="dots"):
+            info, _ = fetch_novel_details(args.url)
+            if info.book_id:
+                args.book_id = info.book_id
+            if info.first_chapter_id:
+                args.first_chapter_id = info.first_chapter_id
+            if info.title:
+                args.title = info.title
+            if info.author:
+                args.author = info.author
+
     chapters_dir = os.path.join(args.output_dir, "chapters")
     os.makedirs(chapters_dir, exist_ok=True)
 

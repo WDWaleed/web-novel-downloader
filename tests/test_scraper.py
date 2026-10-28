@@ -120,6 +120,79 @@ class TestScraper(unittest.TestCase):
         # Should not build EPUB or create chapter files in list-only mode
         mock_build_epub.assert_not_called()
 
+    def test_normalize_novel_url(self):
+        from scraper import normalize_novel_url
+        self.assertEqual(
+            normalize_novel_url("https://novelight.net/book/my-novel"),
+            "https://novelight.net/book/my-novel",
+        )
+        self.assertEqual(
+            normalize_novel_url("/book/my-novel"),
+            "https://novelight.net/book/my-novel",
+        )
+        self.assertEqual(
+            normalize_novel_url("my-novel"),
+            "https://novelight.net/book/my-novel",
+        )
+        self.assertEqual(
+            normalize_novel_url(""),
+            "https://novelight.net/book/shut-up-malevolent-dragon-i-dont-want-to-have-any-more-children-with-you",
+        )
+
+    def test_parse_arguments_info(self):
+        # 1. Flag without argument
+        args1 = parse_arguments(["--info"])
+        self.assertTrue(args1.fetch_info)
+
+        # 2. Flag with URL value
+        args2 = parse_arguments(["--info", "https://novelight.net/book/test-novel"])
+        self.assertEqual(args2.fetch_info, "https://novelight.net/book/test-novel")
+
+        # 3. --url and --fetch-info alias
+        args3 = parse_arguments(["--url", "https://novelight.net/book/test-novel", "--fetch-info"])
+        self.assertEqual(args3.url, "https://novelight.net/book/test-novel")
+        self.assertTrue(args3.fetch_info)
+
+    @patch("scraper.fetch_chapter_index")
+    @patch("scraper.fetch_page")
+    def test_fetch_novel_details(self, mock_fetch_page, mock_fetch_index):
+        from scraper import fetch_novel_details
+        sample_html = """
+        <html>
+        <head><title>Test Book - Read Online Free · Novelight</title></head>
+        <body>
+            <h1 class="clamp">Test Book Title</h1>
+            <a href="/book/chapter/5001" class="read-btn">Start Reading</a>
+            <script>const BOOK_ID = "123";</script>
+        </body>
+        </html>
+        """
+        mock_fetch_page.return_value = sample_html
+
+        ch1 = ChapterMeta("5001", 1, "1", "Intro", "", "", is_locked=False)
+        ch2 = ChapterMeta("5002", 1, "2", "Middle", "", "", is_locked=False)
+        ch3 = ChapterMeta("5003", 2, "3", "Locked End", "", "", is_locked=True)
+        mock_fetch_index.return_value = [ch1, ch2, ch3]
+
+        info, chapters = fetch_novel_details("https://novelight.net/book/test-book")
+        self.assertEqual(info.title, "Test Book Title")
+        self.assertEqual(info.book_id, "123")
+        self.assertEqual(info.first_chapter_id, "5001")
+        self.assertEqual(info.total_chapters, 3)
+        self.assertEqual(info.free_chapters_count, 2)
+        self.assertEqual(info.locked_chapters_count, 1)
+        self.assertEqual(info.volumes_count, 2)
+        self.assertAlmostEqual(info.free_percentage, 66.66666666666667)
+        self.assertIn("Ch. 1 - Ch. 2", info.free_chapter_range)
+        self.assertIn("Ch. 3 - Ch. 3", info.locked_chapter_range)
+
+    @patch("scraper.display_novel_info_flow")
+    def test_scrape_novel_info_flow_called(self, mock_display_flow):
+        args = parse_arguments(["--info", "https://novelight.net/book/my-slug"])
+        scrape_novel(args)
+        mock_display_flow.assert_called_once_with("https://novelight.net/book/my-slug")
+
 
 if __name__ == "__main__":
     unittest.main()
+
