@@ -171,6 +171,26 @@ class TestScraper(unittest.TestCase):
         self.assertEqual(args3.url, "https://novelight.net/book/test-novel")
         self.assertTrue(args3.fetch_info)
 
+    def test_parse_arguments_positional_url(self):
+        # 1. Plain positional URL
+        args1 = parse_arguments(["https://novelight.net/book/ghost-story"])
+        self.assertEqual(args1.url, "https://novelight.net/book/ghost-story")
+
+        # 2. Positional URL with --fast
+        args2 = parse_arguments(["https://novelight.net/book/ghost-story", "--fast"])
+        self.assertEqual(args2.url, "https://novelight.net/book/ghost-story")
+        self.assertTrue(args2.fast)
+
+        # 3. Flag before positional URL
+        args3 = parse_arguments(["--fast", "https://novelight.net/book/ghost-story"])
+        self.assertEqual(args3.url, "https://novelight.net/book/ghost-story")
+        self.assertTrue(args3.fast)
+
+        # 4. Positional URL with --info
+        args4 = parse_arguments(["https://novelight.net/book/ghost-story", "--info"])
+        self.assertEqual(args4.url, "https://novelight.net/book/ghost-story")
+        self.assertTrue(args4.fetch_info)
+
     @patch("scraper.fetch_chapter_index")
     @patch("scraper.fetch_page")
     def test_fetch_novel_details(self, mock_fetch_page, mock_fetch_index):

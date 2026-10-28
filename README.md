@@ -73,9 +73,19 @@ Preview all available chapters without downloading:
 python scraper.py --list-only
 ```
 
-Download all available free chapters and build the EPUB:
+Download all available free chapters of the default novel:
 ```powershell
 python scraper.py
+```
+
+Download any novel directly by URL:
+```powershell
+python scraper.py https://novelight.net/book/<slug>
+```
+
+Download in fast mode:
+```powershell
+python scraper.py https://novelight.net/book/<slug> --fast
 ```
 
 ### Common CLI Options
@@ -83,7 +93,7 @@ python scraper.py
 | Argument | Shorthand | Default | Description |
 |---|---|---|---|
 | `--info` | `--fetch-info`, `--novel-info` | `False` | Fetch and display novel details & chapter availability without downloading (accepts optional URL) |
-| `--url` | `--book-url` | `None` | Novel URL on novelight.net (e.g. `https://novelight.net/book/<slug>`) |
+| `URL` | `--url`, `--book-url` | `None` | Novel URL on novelight.net (pass positionally or with `--url`) |
 | `--book-id` | `--novel-id` | `337` | Book ID on novelight.net |
 | `--free-only` | | `True` | Only download free (unlocked) chapters |
 | `--include-locked` | | `False` | Attempt to download locked chapters as well |

@@ -367,7 +367,14 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
-    # Target Novel
+    # Target Novel (Positional URL or --url flag)
+    parser.add_argument(
+        "positional_url",
+        nargs="?",
+        default=None,
+        metavar="URL",
+        help="Optional novel URL on novelight.net (e.g. https://novelight.net/book/<slug>)",
+    )
     parser.add_argument(
         "--url",
         "--book-url",
@@ -447,14 +454,14 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         "--delay",
         "-d",
         type=float,
-        default=None,
-        help=f"Seconds delay between HTTP requests (default: {config.REQUEST_DELAY})",
+        default=argparse.SUPPRESS,
+        help="Seconds delay between HTTP requests (default: 0.5s, or 0.1s with --fast)",
     )
     parser.add_argument(
         "--jitter",
         type=float,
-        default=None,
-        help=f"Random variation (+/- seconds) applied to delay (default: {config.REQUEST_JITTER})",
+        default=argparse.SUPPRESS,
+        help="Random variation (+/- seconds) applied to delay (default: 0.2s, or 0.05s with --fast)",
     )
 
     # Output Paths & Files
@@ -533,21 +540,20 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     )
 
     args = parser.parse_args(argv)
+    args.url = args.url or args.positional_url
     args.start = args.start_chapter
     args.chapters = args.max_chapters
     args.novel_id = args.book_id
 
     # Resolve delay and jitter defaults based on --fast flag and explicit overrides
+    delay = getattr(args, "delay", None)
+    jitter = getattr(args, "jitter", None)
     if args.fast:
-        if args.delay is None:
-            args.delay = config.FAST_DELAY
-        if args.jitter is None:
-            args.jitter = config.FAST_JITTER
+        args.delay = delay if delay is not None else config.FAST_DELAY
+        args.jitter = jitter if jitter is not None else config.FAST_JITTER
     else:
-        if args.delay is None:
-            args.delay = config.REQUEST_DELAY
-        if args.jitter is None:
-            args.jitter = config.REQUEST_JITTER
+        args.delay = delay if delay is not None else config.REQUEST_DELAY
+        args.jitter = jitter if jitter is not None else config.REQUEST_JITTER
     return args
 
 
