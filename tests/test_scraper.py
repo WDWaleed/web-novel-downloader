@@ -77,6 +77,24 @@ class TestScraper(unittest.TestCase):
         self.assertEqual(args.delay, 0.5)
         self.assertFalse(args.force)
 
+    def test_parse_arguments_defaults(self):
+        args = parse_arguments([])
+        self.assertEqual(args.delay, 0.5)
+        self.assertEqual(args.jitter, 0.2)
+        self.assertFalse(args.fast)
+
+    def test_parse_arguments_fast_mode(self):
+        args = parse_arguments(["--fast"])
+        self.assertTrue(args.fast)
+        self.assertEqual(args.delay, 0.1)
+        self.assertEqual(args.jitter, 0.05)
+
+    def test_parse_arguments_fast_mode_override(self):
+        args = parse_arguments(["--fast", "--delay", "0.0"])
+        self.assertTrue(args.fast)
+        self.assertEqual(args.delay, 0.0)
+        self.assertEqual(args.jitter, 0.05)
+
     @patch("scraper.fetch_chapter_index")
     @patch("scraper.fetch_json")
     @patch("scraper.build_epub")

@@ -90,8 +90,9 @@ python scraper.py
 | `--volumes` | | `None` | Comma-separated volume numbers to download (e.g. `1,2,3`) |
 | `--start-chapter` | `--start`, `-s` | `1` | 1-based start offset in the filtered chapter list |
 | `--max-chapters` | `--chapters`, `-n` | `0` | Max chapters to download (`0` = all available) |
-| `--delay` | `-d` | `2.0` | Base seconds delay between requests |
-| `--jitter` | | `0.5` | Random variance (+/- seconds) applied to delay |
+| `--fast` | | `False` | Fast download mode (`0.1s` delay, `0.05s` jitter) |
+| `--delay` | `-d` | `0.5` | Base seconds delay between requests |
+| `--jitter` | | `0.2` | Random variance (+/- seconds) applied to delay |
 | `--title` | | `"Shut Up, Malevolent Dragon!..."` | Book title metadata in EPUB |
 | `--author` | | `"Unknown"` | Book author metadata in EPUB |
 | `--output-dir` | `-o` | `output` | Directory where files and EPUB are stored |
@@ -121,6 +122,11 @@ python scraper.py --volumes 1
 #### Download Volumes 1 through 3:
 ```powershell
 python scraper.py --volumes 1,2,3
+```
+
+#### Fast download mode (high throughput):
+```powershell
+python scraper.py --fast
 ```
 
 #### Download a batch of 50 chapters starting from chapter 10:

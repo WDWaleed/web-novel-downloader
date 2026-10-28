@@ -439,17 +439,22 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Maximum chapters to download (0 = all available)",
     )
     parser.add_argument(
+        "--fast",
+        action="store_true",
+        help="Fast download mode (0.1s delay, 0.05s jitter)",
+    )
+    parser.add_argument(
         "--delay",
         "-d",
         type=float,
-        default=config.REQUEST_DELAY,
-        help="Seconds delay between HTTP requests",
+        default=None,
+        help=f"Seconds delay between HTTP requests (default: {config.REQUEST_DELAY})",
     )
     parser.add_argument(
         "--jitter",
         type=float,
-        default=config.REQUEST_JITTER,
-        help="Random variation (+/- seconds) applied to delay",
+        default=None,
+        help=f"Random variation (+/- seconds) applied to delay (default: {config.REQUEST_JITTER})",
     )
 
     # Output Paths & Files
@@ -531,6 +536,18 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     args.start = args.start_chapter
     args.chapters = args.max_chapters
     args.novel_id = args.book_id
+
+    # Resolve delay and jitter defaults based on --fast flag and explicit overrides
+    if args.fast:
+        if args.delay is None:
+            args.delay = config.FAST_DELAY
+        if args.jitter is None:
+            args.jitter = config.FAST_JITTER
+    else:
+        if args.delay is None:
+            args.delay = config.REQUEST_DELAY
+        if args.jitter is None:
+            args.jitter = config.REQUEST_JITTER
     return args
 
 

@@ -21,8 +21,10 @@ BOOK_URL: str = f"{BASE_URL}/book/{BOOK_SLUG}"
 FREE_ONLY: bool = True          # Download only unlocked/free chapters
 START_CHAPTER: int = 1          # Ordinal to start downloading from (1-based)
 NUM_CHAPTERS: int = 0           # Max chapters to fetch (0 = all available)
-REQUEST_DELAY: float = 2.0      # Base seconds to pause between requests
-REQUEST_JITTER: float = 0.5     # Random jitter (+/- seconds)
+REQUEST_DELAY: float = 0.5      # Base seconds to pause between requests
+REQUEST_JITTER: float = 0.2     # Random jitter (+/- seconds)
+FAST_DELAY: float = 0.1         # Fast mode delay (seconds)
+FAST_JITTER: float = 0.05       # Fast mode jitter (seconds)
 REQUEST_TIMEOUT: int = 15       # Seconds before request times out
 MAX_RETRIES: int = 3            # Maximum retry attempts on transient errors
 RETRY_BACKOFF: float = 5.0      # Exponential backoff factor (seconds * attempt)
