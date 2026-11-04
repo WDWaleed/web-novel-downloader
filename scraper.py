@@ -511,6 +511,14 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Path to custom CSS stylesheet for EPUB formatting",
     )
 
+    # Source Selection
+    parser.add_argument(
+        "--source",
+        choices=["novelight", "fenrirealm"],
+        default="novelight",
+        help="Source site to scrape from (default: novelight)",
+    )
+
     # Workflow Flags
     parser.add_argument(
         "--force",
@@ -644,6 +652,12 @@ def scrape_novel(args: argparse.Namespace) -> None:
             else (args.url or config.BOOK_URL)
         )
         display_novel_info_flow(target_url)
+        return
+
+    # Dispatch to Fenrirealm scraper if --source=fenrirealm
+    if getattr(args, "source", "novelight") == "fenrirealm":
+        from fenrirealm.scraper import scrape_fenrirealm
+        scrape_fenrirealm(args)
         return
 
     # If novel URL is specified for downloading, auto-fetch details to resolve IDs
