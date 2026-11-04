@@ -41,13 +41,19 @@ def parse_fenrirealm_chapter(
     raw_title = h2.get_text(strip=True) if h2 else f"Chapter {chapter_number}"
 
     # Extract content
-    reader_area = chapter_view.select_one(SELECTOR_CONTENT)
+    reader_area = (
+        chapter_view.select_one(SELECTOR_CONTENT)
+        or chapter_view.select_one("div[role='region'].reader-area")
+        or chapter_view.select_one("div.reader-area")
+    )
     if not reader_area:
         logger.warning("div.reader-area missing for chapter %d.", chapter_number)
         return None
 
-    # Remove scripts, styles, iframes, ads (same defensive approach as Novelight parser)
-    for junk in reader_area.select("script, style, noscript, iframe, .ad, .ads"):
+    # Remove scripts, styles, iframes, ads, and challenge widgets
+    for junk in reader_area.select(
+        "script, style, noscript, iframe, .ad, .ads, [data-testid='unlock-visible-challenge'], [data-testid='turnstile-widget']"
+    ):
         junk.decompose()
 
     # Collect paragraphs

@@ -62,3 +62,6 @@ scalene-profile.*
 
 # Local-only planning docs
 docs/
+
+# Browser profiles
+.browser_profile/
