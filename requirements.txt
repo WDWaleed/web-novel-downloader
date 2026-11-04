@@ -2,3 +2,6 @@ requests>=2.31.0
 beautifulsoup4>=4.12.0
 pypandoc>=1.13
 rich>=13.0.0
+playwright>=1.44
+playwright-stealth>=1.0.6
+

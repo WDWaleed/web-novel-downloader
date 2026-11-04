@@ -1,0 +1,2 @@
+"""Fenrirealm scraper package."""
+

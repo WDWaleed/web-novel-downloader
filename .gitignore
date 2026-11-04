@@ -55,3 +55,10 @@ pandoc_defaults.yaml
 
 # Pending commit instructions
 changes_to_commit*
+
+issues.md
+
+scalene-profile.*
+
+# Local-only planning docs
+docs/
