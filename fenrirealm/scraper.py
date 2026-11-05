@@ -41,11 +41,13 @@ from fenrirealm.config import (
     REQUEST_JITTER,
     SERIES_TITLE,
     SERIES_AUTHOR,
+    SERIES_SLUG,
     EPUB_FILENAME,
 )
 from fenrirealm.fetcher import fetch_chapter_html, close_browser
 from fenrirealm.parser import parse_fenrirealm_chapter, is_end_of_series
 from fetcher import sleep_with_jitter  # reuse existing rate-limiter
+from utils import extract_novel_slug, resolve_output_dir
 
 console = Console(highlight=False, legacy_windows=False)
 logger = logging.getLogger(__name__)
@@ -93,6 +95,13 @@ def _is_chapter_cached(chapter_number: int, chapters_dir: str) -> bool:
 def scrape_fenrirealm(args: argparse.Namespace) -> None:
     """Fenrirealm download orchestrator — called from scraper.py when --source=fenrirealm."""
     atexit.register(close_browser)
+
+    slug = extract_novel_slug(
+        url=getattr(args, "url", None),
+        title=getattr(args, "title", None),
+        default_slug=SERIES_SLUG,
+    )
+    args.output_dir = resolve_output_dir(getattr(args, "output_dir", None), slug)
 
     chapters_dir = os.path.join(args.output_dir, "chapters")
     os.makedirs(chapters_dir, exist_ok=True)

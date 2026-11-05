@@ -15,6 +15,7 @@ from scraper import (
     parse_arguments,
     scrape_novel,
 )
+from utils import extract_novel_slug, resolve_output_dir, slugify
 
 
 class TestScraper(unittest.TestCase):
@@ -229,6 +230,113 @@ class TestScraper(unittest.TestCase):
         args = parse_arguments(["--info", "https://novelight.net/book/my-slug"])
         scrape_novel(args)
         mock_display_flow.assert_called_once_with("https://novelight.net/book/my-slug")
+
+    def test_slugify(self):
+        self.assertEqual(slugify("Hello World!"), "hello-world")
+        self.assertEqual(slugify("Shut Up, Malevolent Dragon!"), "shut-up-malevolent-dragon")
+        self.assertEqual(slugify("  Special @#% Characters & Spaces  "), "special-characters-spaces")
+        self.assertEqual(slugify(""), "novel")
+        self.assertEqual(slugify(None), "novel")
+
+    def test_extract_novel_slug(self):
+        # Novelight URL
+        self.assertEqual(
+            extract_novel_slug(url="https://novelight.net/book/ghost-story"),
+            "ghost-story",
+        )
+        self.assertEqual(
+            extract_novel_slug(url="https://novelight.net/book/ghost-story/"),
+            "ghost-story",
+        )
+        self.assertEqual(
+            extract_novel_slug(url="https://novelight.net/book/ghost-story?tab=ch"),
+            "ghost-story",
+        )
+        # Fenrirealm URL
+        self.assertEqual(
+            extract_novel_slug(url="https://fenrirealm.com/series/absolute-regression/1"),
+            "absolute-regression",
+        )
+        self.assertEqual(
+            extract_novel_slug(url="https://fenrirealm.com/series/my-cool-series"),
+            "my-cool-series",
+        )
+        # Fallback to default_slug
+        self.assertEqual(
+            extract_novel_slug(default_slug="my-default-series"),
+            "my-default-series",
+        )
+        # Fallback to title
+        self.assertEqual(
+            extract_novel_slug(title="Solo Leveling Ragnarok"),
+            "solo-leveling-ragnarok",
+        )
+        # Empty fallback
+        self.assertEqual(extract_novel_slug(), "novel")
+
+    def test_resolve_output_dir(self):
+        # Default output dir nests under <base_default>/<slug>
+        self.assertEqual(
+            resolve_output_dir("output", "my-slug", base_default="output"),
+            os.path.join("output", "my-slug"),
+        )
+        self.assertEqual(
+            resolve_output_dir(None, "my-slug", base_default="output"),
+            os.path.join("output", "my-slug"),
+        )
+        # Custom output dir preserved
+        custom = os.path.join(self.test_dir, "custom_novel")
+        self.assertEqual(
+            resolve_output_dir(custom, "my-slug", base_default="output"),
+            custom,
+        )
+
+    @patch("scraper.fetch_chapter_index")
+    @patch("scraper.fetch_json")
+    @patch("scraper.build_epub")
+    def test_scrape_novel_default_output_dir_nested(self, mock_build_epub, mock_fetch_json, mock_fetch_index):
+        import config
+        ch1 = ChapterMeta("150473", 1, "1", "First Chapter", "1 vol. 1 chapter - First Chapter", "", is_locked=False)
+        mock_fetch_index.return_value = [ch1]
+        mock_fetch_json.return_value = {"content": '<div class="chapter-text"><div>Paragraph</div></div>'}
+        mock_build_epub.return_value = "dummy.epub"
+
+        with patch("config.OUTPUT_DIR", self.test_dir):
+            args = parse_arguments([
+                "--output-dir", self.test_dir,
+                "--max-chapters", "1",
+                "--delay", "0.0",
+                "--jitter", "0.0",
+            ])
+            scrape_novel(args)
+            expected_dir = os.path.join(self.test_dir, config.BOOK_SLUG)
+            self.assertEqual(args.output_dir, expected_dir)
+            self.assertTrue(os.path.exists(os.path.join(expected_dir, "chapters")))
+
+    @patch("fenrirealm.scraper.fetch_chapter_html")
+    @patch("fenrirealm.scraper.build_epub")
+    def test_scrape_fenrirealm_default_output_dir_nested(self, mock_build_epub, mock_fetch_html):
+        from fenrirealm.scraper import scrape_fenrirealm
+        mock_fetch_html.return_value = (
+            "<html><body><div class='chapter-view'>"
+            "<div class='text-center'><h2>Absolute Regression - Ch 1</h2></div>"
+            "<div class='reader-area touch-manipulation'><p>Paragraph 1</p></div>"
+            "</div></body></html>"
+        )
+        mock_build_epub.return_value = "dummy.epub"
+
+        with patch("config.OUTPUT_DIR", self.test_dir):
+            args = parse_arguments([
+                "--source", "fenrirealm",
+                "--output-dir", self.test_dir,
+                "--max-chapters", "1",
+                "--delay", "0.0",
+                "--jitter", "0.0",
+            ])
+            scrape_fenrirealm(args)
+            expected_dir = os.path.join(self.test_dir, "absolute-regression")
+            self.assertEqual(args.output_dir, expected_dir)
+            self.assertTrue(os.path.exists(os.path.join(expected_dir, "chapters")))
 
 
 if __name__ == "__main__":

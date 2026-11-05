@@ -45,6 +45,7 @@ from parser import (
     parse_chapter_list,
     parse_novel_info,
 )
+from utils import extract_novel_slug, resolve_output_dir, slugify
 
 # Ensure UTF-8 output on Windows consoles to prevent UnicodeEncodeError
 if sys.platform == "win32":
@@ -470,7 +471,7 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         "-o",
         type=str,
         default=config.OUTPUT_DIR,
-        help="Root output directory for chapters and EPUB",
+        help="Root output directory for chapters and EPUB (default: output/<novel-slug>)",
     )
     parser.add_argument(
         "--epub-filename",
@@ -672,6 +673,13 @@ def scrape_novel(args: argparse.Namespace) -> None:
                 args.title = info.title
             if info.author:
                 args.author = info.author
+
+    slug = extract_novel_slug(
+        url=getattr(args, "url", None),
+        title=getattr(args, "title", None),
+        default_slug=config.BOOK_SLUG if getattr(args, "book_id", None) == config.BOOK_ID else f"book_{args.book_id}",
+    )
+    args.output_dir = resolve_output_dir(getattr(args, "output_dir", None), slug)
 
     chapters_dir = os.path.join(args.output_dir, "chapters")
     os.makedirs(chapters_dir, exist_ok=True)
