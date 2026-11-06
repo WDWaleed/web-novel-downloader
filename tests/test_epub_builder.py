@@ -187,6 +187,91 @@ class TestEpubBuilder(unittest.TestCase):
             content = f.read()
         self.assertIn('description: "A thrilling tale of adventure and danger."', content)
 
+    def test_unique_pandoc_defaults_per_novel(self):
+        """Verify each novel receives its own isolated pandoc_defaults.yaml with strictly its metadata."""
+        novel_a_dir = os.path.join(self.test_dir, "novel-a")
+        novel_b_dir = os.path.join(self.test_dir, "novel-b")
+        os.makedirs(novel_a_dir, exist_ok=True)
+        os.makedirs(novel_b_dir, exist_ok=True)
+
+        defaults_a = os.path.join(novel_a_dir, "pandoc_defaults.yaml")
+        defaults_b = os.path.join(novel_b_dir, "pandoc_defaults.yaml")
+
+        cover_a = os.path.join(novel_a_dir, "cover.jpg")
+        with open(cover_a, "wb") as f:
+            f.write(b"fake image a")
+
+        write_pandoc_defaults(
+            filepath=defaults_a,
+            output_file=os.path.join(novel_a_dir, "novel-a.epub"),
+            input_files=[os.path.join(novel_a_dir, "ch1.html"), os.path.join(novel_a_dir, "ch2.html")],
+            book_title="Novel Alpha",
+            book_author="Author Alpha",
+            book_language="en",
+            cover_image=cover_a,
+            book_description="Description for Novel Alpha",
+        )
+
+        write_pandoc_defaults(
+            filepath=defaults_b,
+            output_file=os.path.join(novel_b_dir, "novel-b.epub"),
+            input_files=[os.path.join(novel_b_dir, "ch1.html")],
+            book_title="Novel Beta",
+            book_author="Author Beta",
+            book_language="ko",
+            book_description="Description for Novel Beta",
+        )
+
+        # Both configuration files must exist independently
+        self.assertTrue(os.path.exists(defaults_a))
+        self.assertTrue(os.path.exists(defaults_b))
+
+        with open(defaults_a, "r", encoding="utf-8") as f:
+            content_a = f.read()
+        with open(defaults_b, "r", encoding="utf-8") as f:
+            content_b = f.read()
+
+        # Novel A checks
+        self.assertIn('title: "Novel Alpha"', content_a)
+        self.assertIn('author: "Author Alpha"', content_a)
+        self.assertIn('lang: "en"', content_a)
+        self.assertIn('description: "Description for Novel Alpha"', content_a)
+        self.assertIn("novel-a.epub", content_a)
+        self.assertIn("cover.jpg", content_a)
+        self.assertNotIn("Novel Beta", content_a)
+
+        # Novel B checks
+        self.assertIn('title: "Novel Beta"', content_b)
+        self.assertIn('author: "Author Beta"', content_b)
+        self.assertIn('lang: "ko"', content_b)
+        self.assertIn('description: "Description for Novel Beta"', content_b)
+        self.assertIn("novel-b.epub", content_b)
+        self.assertNotIn("cover.jpg", content_b)
+        self.assertNotIn("Novel Alpha", content_b)
+
+    def test_build_epub_auto_nests_defaults_when_output_dir_is_default(self):
+        """When output_dir is default or None, build_epub auto-nests under output/<slug>/pandoc_defaults.yaml."""
+        from unittest.mock import patch
+        import config
+        ch1 = Chapter(1, "1 Start", "Chapter 1", "<p>Content</p>")
+
+        with patch("config.OUTPUT_DIR", self.test_dir):
+            with patch("subprocess.run") as mock_run:
+                mock_run.return_value.returncode = 0
+                build_epub(
+                    chapters=[ch1],
+                    output_dir=self.test_dir,  # base default root
+                    book_title="My Great Novel",
+                    css_file=None,
+                )
+
+        expected_defaults = os.path.join(self.test_dir, "my-great-novel", "pandoc_defaults.yaml")
+        self.assertTrue(os.path.exists(expected_defaults))
+        with open(expected_defaults, "r", encoding="utf-8") as f:
+            content = f.read()
+        self.assertIn('title: "My Great Novel"', content)
+        self.assertIn("my-great-novel.epub", content)
+
 
     def test_sanitize_saved_chapter_file(self):
         ch_path = os.path.join(self.test_dir, "chapter_0003.html")

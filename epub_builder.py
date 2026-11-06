@@ -28,6 +28,7 @@ from parser import (
     is_redundant_header_paragraph,
     normalize_title,
 )
+from utils import resolve_output_dir, slugify
 
 logger = logging.getLogger(__name__)
 
@@ -311,13 +312,13 @@ def write_pandoc_defaults(
         lines.append(f'epub-cover-image: "{cover_abs}"')
 
     lines.append("metadata:")
-    escaped_title = book_title.replace('"', '\\"')
-    escaped_author = book_author.replace('"', '\\"')
+    escaped_title = book_title.replace('\\', '\\\\').replace('"', '\\"')
+    escaped_author = book_author.replace('\\', '\\\\').replace('"', '\\"')
     lines.append(f'  title: "{escaped_title}"')
     lines.append(f'  author: "{escaped_author}"')
     lines.append(f'  lang: "{book_language}"')
     if book_description:
-        escaped_desc = book_description.replace('"', '\\"')
+        escaped_desc = book_description.replace('\\', '\\\\').replace('"', '\\"')
         clean_desc = re.sub(r"\s+", " ", escaped_desc).strip()
         lines.append(f'  description: "{clean_desc}"')
 
@@ -335,8 +336,8 @@ def write_pandoc_defaults(
 def build_epub(
     chapters: Optional[Sequence[Chapter]] = None,
     chapter_files: Optional[Sequence[str]] = None,
-    output_dir: str = OUTPUT_DIR,
-    epub_filename: str = EPUB_FILENAME,
+    output_dir: Optional[str] = None,
+    epub_filename: Optional[str] = None,
     book_title: str = BOOK_TITLE,
     book_author: str = BOOK_AUTHOR,
     book_language: str = BOOK_LANGUAGE,
@@ -350,6 +351,16 @@ def build_epub(
     Uses a Pandoc defaults file (pandoc_defaults.yaml) to completely bypass OS command-line
     length limits (32k char limit).
     """
+    # Ensure output_dir is isolated per-novel if left as base default
+    import config as _cfg
+    base_default = _cfg.OUTPUT_DIR
+    if output_dir is None or os.path.abspath(output_dir) == os.path.abspath(base_default):
+        slug = slugify(book_title) if book_title else "novel"
+        output_dir = resolve_output_dir(output_dir, slug, base_default=base_default)
+
+    if not epub_filename:
+        epub_filename = f"{slugify(book_title)}.epub" if book_title else EPUB_FILENAME
+
     chapters_folder = os.path.join(output_dir, "chapters")
     files_to_compile: list[str] = []
 
