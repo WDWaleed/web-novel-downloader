@@ -287,6 +287,7 @@ def write_pandoc_defaults(
     book_language: str = "en",
     css_file: Optional[str] = None,
     cover_image: Optional[str] = None,
+    book_description: Optional[str] = None,
 ) -> str:
     """
     Generate a Pandoc defaults YAML file to bypass Windows command-line length
@@ -315,6 +316,10 @@ def write_pandoc_defaults(
     lines.append(f'  title: "{escaped_title}"')
     lines.append(f'  author: "{escaped_author}"')
     lines.append(f'  lang: "{book_language}"')
+    if book_description:
+        escaped_desc = book_description.replace('"', '\\"')
+        clean_desc = re.sub(r"\s+", " ", escaped_desc).strip()
+        lines.append(f'  description: "{clean_desc}"')
 
     lines.append("input-files:")
     for f in input_files:
@@ -335,6 +340,7 @@ def build_epub(
     book_title: str = BOOK_TITLE,
     book_author: str = BOOK_AUTHOR,
     book_language: str = BOOK_LANGUAGE,
+    book_description: Optional[str] = None,
     cover_image: Optional[str] = None,
     css_file: Optional[str] = "styles.css",
 ) -> str:
@@ -417,6 +423,7 @@ def build_epub(
         book_language=book_language,
         css_file=css_file,
         cover_image=cover_image,
+        book_description=book_description,
     )
     logger.info("Generated Pandoc defaults configuration: %s", defaults_path)
 

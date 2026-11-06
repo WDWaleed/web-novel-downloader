@@ -172,6 +172,21 @@ class TestEpubBuilder(unittest.TestCase):
         self.assertIn("input-files:", content)
         self.assertIn("ch1.html", content)
 
+    def test_write_pandoc_defaults_with_description(self):
+        defaults_path = os.path.join(self.test_dir, "test_defaults_desc.yaml")
+        out_epub = os.path.join(self.test_dir, "test.epub")
+        written = write_pandoc_defaults(
+            filepath=defaults_path,
+            output_file=out_epub,
+            input_files=["ch1.html"],
+            book_title="Test Book",
+            book_author="Author X",
+            book_description="A thrilling tale of adventure\nand danger.",
+        )
+        with open(written, "r", encoding="utf-8") as f:
+            content = f.read()
+        self.assertIn('description: "A thrilling tale of adventure and danger."', content)
+
 
     def test_sanitize_saved_chapter_file(self):
         ch_path = os.path.join(self.test_dir, "chapter_0003.html")

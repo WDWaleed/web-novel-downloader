@@ -83,6 +83,19 @@ class TestScraper(unittest.TestCase):
         self.assertEqual(args.delay, 0.5)
         self.assertEqual(args.jitter, 0.2)
         self.assertFalse(args.fast)
+        self.assertIsNone(args.title)
+        self.assertIsNone(args.author)
+        self.assertIsNone(args.epub_filename)
+
+    def test_parse_arguments_metadata_explicit(self):
+        args = parse_arguments([
+            "--title", "Custom Title",
+            "--author", "Custom Author",
+            "--epub-filename", "custom.epub",
+        ])
+        self.assertEqual(args.title, "Custom Title")
+        self.assertEqual(args.author, "Custom Author")
+        self.assertEqual(args.epub_filename, "custom.epub")
 
     def test_parse_arguments_fast_mode(self):
         args = parse_arguments(["--fast"])
@@ -483,6 +496,121 @@ class TestScraper(unittest.TestCase):
         scrape_novel(args)
         mock_fetch_info.assert_called_once()
         self.assertIn("fenrirealm.com", mock_fetch_info.call_args[0][0])
+
+    @patch("scraper.fetch_novel_details")
+    @patch("scraper.fetch_chapter_index")
+    @patch("scraper.fetch_json")
+    @patch("scraper.build_epub")
+    def test_scrape_novel_dynamic_metadata_from_fetched_info(
+        self, mock_build_epub, mock_fetch_json, mock_fetch_index, mock_fetch_details
+    ):
+        from parser import NovelInfo
+        info = NovelInfo(
+            url="https://novelight.net/book/solo-leveling",
+            book_id="999",
+            title="Solo Leveling",
+            author="Chugong",
+            first_chapter_id="1001",
+            description="A hunter awakens to become the shadow monarch.",
+        )
+        ch1 = ChapterMeta("1001", 1, "1", "Prologue", "1 vol. 1 chapter - Prologue", "", is_locked=False)
+        mock_fetch_details.return_value = (info, [ch1])
+        mock_fetch_index.return_value = [ch1]
+        mock_fetch_json.return_value = {"content": "<div>Awakening</div>"}
+        mock_build_epub.return_value = "solo-leveling.epub"
+
+        args = parse_arguments([
+            "--url", "https://novelight.net/book/solo-leveling",
+            "--output-dir", self.test_dir,
+            "--max-chapters", "1",
+            "--delay", "0.0",
+            "--jitter", "0.0",
+        ])
+        scrape_novel(args)
+
+        self.assertEqual(args.title, "Solo Leveling")
+        self.assertEqual(args.author, "Chugong")
+        self.assertEqual(args.epub_filename, "solo-leveling.epub")
+
+        mock_build_epub.assert_called_once()
+        call_kwargs = mock_build_epub.call_args.kwargs
+        self.assertEqual(call_kwargs["book_title"], "Solo Leveling")
+        self.assertEqual(call_kwargs["book_author"], "Chugong")
+        self.assertEqual(call_kwargs["epub_filename"], "solo-leveling.epub")
+        self.assertEqual(call_kwargs["book_description"], "A hunter awakens to become the shadow monarch.")
+
+    @patch("scraper.fetch_novel_details")
+    @patch("scraper.fetch_chapter_index")
+    @patch("scraper.fetch_json")
+    @patch("scraper.build_epub")
+    def test_scrape_novel_explicit_metadata_overrides_fetched_info(
+        self, mock_build_epub, mock_fetch_json, mock_fetch_index, mock_fetch_details
+    ):
+        from parser import NovelInfo
+        info = NovelInfo(
+            url="https://novelight.net/book/solo-leveling",
+            book_id="999",
+            title="Solo Leveling",
+            author="Chugong",
+            first_chapter_id="1001",
+        )
+        ch1 = ChapterMeta("1001", 1, "1", "Prologue", "1 vol. 1 chapter - Prologue", "", is_locked=False)
+        mock_fetch_details.return_value = (info, [ch1])
+        mock_fetch_index.return_value = [ch1]
+        mock_fetch_json.return_value = {"content": "<div>Awakening</div>"}
+        mock_build_epub.return_value = "custom.epub"
+
+        args = parse_arguments([
+            "--url", "https://novelight.net/book/solo-leveling",
+            "--output-dir", self.test_dir,
+            "--title", "Custom Title",
+            "--author", "Custom Author",
+            "--epub-filename", "custom.epub",
+            "--max-chapters", "1",
+            "--delay", "0.0",
+            "--jitter", "0.0",
+        ])
+        scrape_novel(args)
+
+        self.assertEqual(args.title, "Custom Title")
+        self.assertEqual(args.author, "Custom Author")
+        self.assertEqual(args.epub_filename, "custom.epub")
+
+        mock_build_epub.assert_called_once()
+        call_kwargs = mock_build_epub.call_args.kwargs
+        self.assertEqual(call_kwargs["book_title"], "Custom Title")
+        self.assertEqual(call_kwargs["book_author"], "Custom Author")
+        self.assertEqual(call_kwargs["epub_filename"], "custom.epub")
+
+    @patch("fenrirealm.scraper.fetch_chapter_html")
+    @patch("fenrirealm.scraper.build_epub")
+    def test_scrape_fenrirealm_dynamic_metadata(self, mock_build_epub, mock_fetch_html):
+        from fenrirealm.scraper import scrape_fenrirealm
+        mock_fetch_html.return_value = (
+            "<html><body><div class='chapter-view'>"
+            "<div class='text-center'><h2>Absolute Regression - Ch 1</h2></div>"
+            "<div class='reader-area touch-manipulation'><p>Paragraph 1</p></div>"
+            "</div></body></html>"
+        )
+        mock_build_epub.return_value = "absolute-regression.epub"
+
+        args = parse_arguments([
+            "--source", "fenrirealm",
+            "--output-dir", self.test_dir,
+            "--max-chapters", "1",
+            "--delay", "0.0",
+            "--jitter", "0.0",
+        ])
+        scrape_fenrirealm(args)
+
+        self.assertEqual(args.title, "Absolute Regression")
+        self.assertEqual(args.author, "Unknown")
+        self.assertEqual(args.epub_filename, "absolute-regression.epub")
+
+        mock_build_epub.assert_called_once()
+        call_kwargs = mock_build_epub.call_args.kwargs
+        self.assertEqual(call_kwargs["book_title"], "Absolute Regression")
+        self.assertEqual(call_kwargs["epub_filename"], "absolute-regression.epub")
 
 
 if __name__ == "__main__":

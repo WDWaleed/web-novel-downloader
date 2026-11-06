@@ -505,7 +505,7 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--epub-filename",
         type=str,
-        default=config.EPUB_FILENAME,
+        default=None,
         help="Output EPUB filename",
     )
 
@@ -513,13 +513,13 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--title",
         type=str,
-        default=config.BOOK_TITLE,
+        default=None,
         help="EPUB book title metadata",
     )
     parser.add_argument(
         "--author",
         type=str,
-        default=config.BOOK_AUTHOR,
+        default=None,
         help="EPUB book author metadata",
     )
     parser.add_argument(
@@ -711,6 +711,7 @@ def scrape_novel(args: argparse.Namespace) -> None:
         return
 
     # If novel URL is specified for downloading, auto-fetch details to resolve IDs
+    novel_description: Optional[str] = None
     if getattr(args, "url", None):
         with console.status("[bold cyan]Fetching novel details from URL...[/bold cyan]", spinner="dots"):
             info, _ = fetch_novel_details(args.url)
@@ -718,10 +719,20 @@ def scrape_novel(args: argparse.Namespace) -> None:
                 args.book_id = info.book_id
             if info.first_chapter_id:
                 args.first_chapter_id = info.first_chapter_id
-            if info.title:
+            if getattr(args, "title", None) is None and info.title:
                 args.title = info.title
-            if info.author:
+            if getattr(args, "author", None) is None and info.author:
                 args.author = info.author
+            if info.description:
+                novel_description = info.description
+
+    # Populate defaults for any metadata still unset
+    if getattr(args, "title", None) is None:
+        args.title = config.BOOK_TITLE
+    if getattr(args, "author", None) is None:
+        args.author = config.BOOK_AUTHOR or "Unknown"
+    if getattr(args, "epub_filename", None) is None:
+        args.epub_filename = f"{slugify(args.title)}.epub"
 
     slug = extract_novel_slug(
         url=getattr(args, "url", None),
@@ -912,6 +923,7 @@ def scrape_novel(args: argparse.Namespace) -> None:
                 book_title=args.title,
                 book_author=args.author,
                 book_language=args.lang,
+                book_description=novel_description,
                 cover_image=args.cover,
                 css_file=args.css,
             )

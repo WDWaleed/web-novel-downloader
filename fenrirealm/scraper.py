@@ -47,7 +47,7 @@ from fenrirealm.config import (
 from fenrirealm.fetcher import fetch_chapter_html, close_browser
 from fenrirealm.parser import parse_fenrirealm_chapter, is_end_of_series
 from fetcher import sleep_with_jitter  # reuse existing rate-limiter
-from utils import extract_novel_slug, resolve_output_dir
+from utils import extract_novel_slug, resolve_output_dir, slugify
 
 console = Console(highlight=False, legacy_windows=False)
 logger = logging.getLogger(__name__)
@@ -103,6 +103,13 @@ def scrape_fenrirealm(args: argparse.Namespace) -> None:
     )
     args.output_dir = resolve_output_dir(getattr(args, "output_dir", None), slug)
 
+    if getattr(args, "title", None) is None:
+        args.title = SERIES_TITLE
+    if getattr(args, "author", None) is None:
+        args.author = SERIES_AUTHOR
+    if getattr(args, "epub_filename", None) is None:
+        args.epub_filename = f"{slugify(args.title)}.epub"
+
     chapters_dir = os.path.join(args.output_dir, "chapters")
     os.makedirs(chapters_dir, exist_ok=True)
 
@@ -116,7 +123,7 @@ def scrape_fenrirealm(args: argparse.Namespace) -> None:
     console.print()
     console.print(
         Panel.fit(
-            f"[bold cyan]Fenrirealm Scraper[/bold cyan] — [italic]{SERIES_TITLE}[/italic]\n"
+            f"[bold cyan]Fenrirealm Scraper[/bold cyan] — [italic]{args.title}[/italic]\n"
             f"[dim]Start chapter:[/dim] [yellow]{start_ch}[/yellow]  "
             f"[dim]|[/dim]  [dim]Max chapters:[/dim] [yellow]{max_ch if max_ch else 'unlimited'}[/yellow]  "
             f"[dim]|[/dim]  [dim]Output:[/dim] [yellow]{args.output_dir}[/yellow]",
@@ -286,9 +293,9 @@ def scrape_fenrirealm(args: argparse.Namespace) -> None:
             epub_path = build_epub(
                 chapter_files=saved_files,
                 output_dir=args.output_dir,
-                epub_filename=getattr(args, "epub_filename", EPUB_FILENAME),
-                book_title=getattr(args, "title", SERIES_TITLE),
-                book_author=getattr(args, "author", SERIES_AUTHOR),
+                epub_filename=args.epub_filename,
+                book_title=args.title,
+                book_author=args.author,
                 book_language=lang,
                 cover_image=getattr(args, "cover", None),
                 css_file=getattr(args, "css", None),
