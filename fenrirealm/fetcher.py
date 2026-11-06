@@ -107,6 +107,55 @@ def fetch_chapter_html(url: str, timeout: int = 60_000) -> str:
         page.close()
 
 
+def fetch_series_page_html(url: str, timeout: int = 60_000) -> str:
+    """
+    Navigate to a Fenrirealm series overview URL and return fully rendered HTML.
+    Waits for the series title heading to appear (or times out gracefully).
+    Used for --info lookups on series pages (e.g. https://fenrirealm.com/series/<slug>).
+    """
+    ctx = _get_context()
+    page: Page = ctx.new_page()
+    try:
+        logger.debug("Navigating to series page %s", url)
+        page.goto(url, wait_until="domcontentloaded", timeout=timeout)
+
+        start_time = time.time()
+        timeout_sec = timeout / 1000.0
+        prompted = False
+
+        while time.time() - start_time < timeout_sec:
+            has_challenge = page.locator("[data-testid='unlock-visible-challenge']").count() > 0
+            # Series page is ready when an h1 heading or series-title element is present
+            has_title = (
+                page.locator("h1").count() > 0
+                or page.locator(".series-title").count() > 0
+            )
+
+            if has_title and not has_challenge:
+                logger.debug("Series page loaded at %s.", url)
+                break
+
+            if has_challenge and not prompted:
+                print(
+                    "\n>>> [Action Required] Cloudflare Turnstile challenge displayed in browser window.\n"
+                    ">>> Please click the 'Confirm you are human' checkbox in the open browser...\n"
+                )
+                prompted = True
+
+            time.sleep(1)
+        else:
+            logger.warning(
+                "Timed out waiting for series page at %s. Proceeding with current content.",
+                url,
+            )
+
+        html = page.content()
+        logger.debug("Fetched %d bytes from series page %s", len(html), url)
+        return html
+    finally:
+        page.close()
+
+
 def close_browser() -> None:
     """Tear down the persistent Playwright context (call at program exit)."""
     global _playwright, _context

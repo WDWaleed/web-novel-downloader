@@ -419,6 +419,71 @@ class TestScraper(unittest.TestCase):
             self.assertEqual(args.output_dir, expected_dir)
             self.assertTrue(os.path.exists(os.path.join(expected_dir, "chapters")))
 
+    @patch("fenrirealm.parser.fetch_fenrirealm_info")
+    def test_display_novel_info_flow_dispatches_to_fenrirealm(self, mock_fetch_info):
+        """display_novel_info_flow() calls fetch_fenrirealm_info for fenrirealm.com URLs."""
+        from scraper import display_novel_info_flow
+        from parser import NovelInfo
+        mock_info = NovelInfo(
+            url="https://fenrirealm.com/series/absolute-regression",
+            book_id="absolute-regression",
+            title="Absolute Regression",
+            first_chapter_id="1",
+        )
+        mock_fetch_info.return_value = mock_info
+
+        # Should not raise; just verify the right function was called
+        with patch("scraper.display_novel_info"):
+            display_novel_info_flow("https://fenrirealm.com/series/absolute-regression")
+        mock_fetch_info.assert_called_once_with("https://fenrirealm.com/series/absolute-regression")
+
+    @patch("scraper.fetch_novel_details")
+    def test_display_novel_info_flow_uses_novelight_for_novelight_urls(self, mock_fetch_details):
+        """display_novel_info_flow() calls fetch_novel_details for novelight.net URLs."""
+        from scraper import display_novel_info_flow
+        from parser import NovelInfo
+        mock_info = NovelInfo(
+            url="https://novelight.net/book/ghost-story",
+            book_id="123",
+            title="Ghost Story",
+            first_chapter_id="456",
+        )
+        mock_fetch_details.return_value = (mock_info, [])
+
+        with patch("scraper.display_novel_info"):
+            display_novel_info_flow("https://novelight.net/book/ghost-story")
+        mock_fetch_details.assert_called_once()
+
+    @patch("fenrirealm.parser.fetch_fenrirealm_info")
+    @patch("scraper.display_novel_info")
+    def test_scrape_novel_info_fenrirealm_dispatch(self, mock_display_info, mock_fetch_info):
+        from parser import NovelInfo
+        mock_info = NovelInfo(
+            url="https://fenrirealm.com/series/absolute-regression",
+            book_id="absolute-regression",
+            title="Absolute Regression",
+            first_chapter_id="1",
+        )
+        mock_fetch_info.return_value = mock_info
+
+        # 1. Positional / flag URL auto-detected
+        args = parse_arguments(["--info", "https://fenrirealm.com/series/absolute-regression"])
+        scrape_novel(args)
+        mock_fetch_info.assert_called_with("https://fenrirealm.com/series/absolute-regression")
+
+        # 2. --source fenrirealm with bare slug
+        mock_fetch_info.reset_mock()
+        args = parse_arguments(["--source", "fenrirealm", "--info", "absolute-regression"])
+        scrape_novel(args)
+        mock_fetch_info.assert_called_with("https://fenrirealm.com/series/absolute-regression")
+
+        # 3. --source fenrirealm with bare --info
+        mock_fetch_info.reset_mock()
+        args = parse_arguments(["--source", "fenrirealm", "--info"])
+        scrape_novel(args)
+        mock_fetch_info.assert_called_once()
+        self.assertIn("fenrirealm.com", mock_fetch_info.call_args[0][0])
+
 
 if __name__ == "__main__":
     unittest.main()

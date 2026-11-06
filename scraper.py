@@ -241,14 +241,16 @@ def display_novel_info(info: NovelInfo, chapters: Optional[list[ChapterMeta]] = 
     if info.latest_chapter_title:
         avail_table.add_row("Latest Chapter", info.latest_chapter_title)
 
-    avail_table.add_row(
-        "API Identifiers",
-        f"[dim]Book ID:[/dim] [yellow]{info.book_id}[/yellow]  [dim]|  First Chapter ID:[/dim] [yellow]{info.first_chapter_id}[/yellow]",
-    )
+    # Only show API identifiers for Novelight (Fenrirealm has no numeric book/chapter IDs)
+    if detect_source(info.url) != "fenrirealm":
+        avail_table.add_row(
+            "API Identifiers",
+            f"[dim]Book ID:[/dim] [yellow]{info.book_id}[/yellow]  [dim]|  First Chapter ID:[/dim] [yellow]{info.first_chapter_id}[/yellow]",
+        )
 
     console.print(avail_table)
 
-    # Volume Breakdown Table (if multiple volumes)
+    # Volume Breakdown Table (if multiple volumes, Novelight only)
     if chapters and info.volumes_count > 1:
         vol_groups: dict[int, list[ChapterMeta]] = defaultdict(list)
         for ch in chapters:
@@ -304,14 +306,27 @@ def display_novel_info(info: NovelInfo, chapters: Optional[list[ChapterMeta]] = 
 
     # Download suggestions guide
     console.print()
-    console.print(
-        Panel(
+    if detect_source(info.url) == "fenrirealm":
+        guide_text = (
+            f"[bold]To download all chapters of this series:[/bold]\n"
+            f"  [cyan]python scraper.py \"{info.url}\"[/cyan]\n\n"
+            f"[bold]To download starting from a specific chapter:[/bold]\n"
+            f"  [cyan]python scraper.py \"{info.url}\" --start 10[/cyan]\n\n"
+            f"[bold]To limit the number of chapters downloaded:[/bold]\n"
+            f"  [cyan]python scraper.py \"{info.url}\" --max-chapters 50[/cyan]"
+        )
+    else:
+        guide_text = (
             f"[bold]To download all free chapters of this novel:[/bold]\n"
             f"  [cyan]python scraper.py --url \"{info.url}\"[/cyan]\n\n"
             f"[bold]To download specific volume(s) (e.g. Volume 1):[/bold]\n"
             f"  [cyan]python scraper.py --url \"{info.url}\" --volumes 1[/cyan]\n\n"
             f"[bold]To preview chapter index table:[/bold]\n"
-            f"  [cyan]python scraper.py --url \"{info.url}\" --list-only[/cyan]",
+            f"  [cyan]python scraper.py --url \"{info.url}\" --list-only[/cyan]"
+        )
+    console.print(
+        Panel(
+            guide_text,
             title="[bold green]Download Command Guide[/bold green]",
             border_style="green",
             padding=(0, 2),
@@ -321,7 +336,21 @@ def display_novel_info(info: NovelInfo, chapters: Optional[list[ChapterMeta]] = 
 
 
 def display_novel_info_flow(url_or_slug: str) -> None:
-    """Fetch and display novel details with rich progress spinner."""
+    """Fetch and display novel details with rich progress spinner.
+
+    Automatically dispatches to the Fenrirealm info fetcher when the URL
+    contains 'fenrirealm.com', otherwise falls back to the Novelight flow.
+    """
+    if detect_source(url_or_slug) == "fenrirealm":
+        from fenrirealm.parser import fetch_fenrirealm_info
+        with console.status(
+            f"[bold cyan]Fetching Fenrirealm series info from {url_or_slug}...[/bold cyan]",
+            spinner="dots",
+        ):
+            info = fetch_fenrirealm_info(url_or_slug)
+        display_novel_info(info)
+        return
+
     canonical_url = normalize_novel_url(url_or_slug)
     with console.status(f"[bold cyan]Fetching novel details from {canonical_url}...[/bold cyan]", spinner="dots"):
         info, chapters = fetch_novel_details(canonical_url)
@@ -659,11 +688,19 @@ def scrape_novel(args: argparse.Namespace) -> None:
 
     # Phase 0: Novel Info fetch mode
     if getattr(args, "fetch_info", False):
+        default_url = (
+            "https://fenrirealm.com/series/absolute-regression"
+            if getattr(args, "source", None) == "fenrirealm"
+            else config.BOOK_URL
+        )
         target_url = (
             args.fetch_info
             if isinstance(args.fetch_info, str)
-            else (args.url or config.BOOK_URL)
+            else (args.url or default_url)
         )
+        if getattr(args, "source", None) == "fenrirealm" and "fenrirealm.com" not in target_url:
+            from fenrirealm.parser import _normalize_series_url
+            target_url = _normalize_series_url(target_url)
         display_novel_info_flow(target_url)
         return
 
