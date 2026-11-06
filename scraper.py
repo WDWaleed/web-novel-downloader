@@ -45,7 +45,7 @@ from parser import (
     parse_chapter_list,
     parse_novel_info,
 )
-from utils import extract_novel_slug, resolve_output_dir, slugify
+from utils import detect_source, extract_novel_slug, resolve_output_dir, slugify
 
 # Ensure UTF-8 output on Windows consoles to prevent UnicodeEncodeError
 if sys.platform == "win32":
@@ -515,9 +515,9 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     # Source Selection
     parser.add_argument(
         "--source",
-        choices=["novelight", "fenrirealm"],
-        default="novelight",
-        help="Source site to scrape from (default: novelight)",
+        choices=["auto", "novelight", "fenrirealm"],
+        default="auto",
+        help="Source site to scrape from",
     )
 
     # Workflow Flags
@@ -553,6 +553,11 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     args.start = args.start_chapter
     args.chapters = args.max_chapters
     args.novel_id = args.book_id
+
+    # Resolve platform source if auto
+    if getattr(args, "source", "auto") == "auto":
+        target_url = args.url or (args.fetch_info if isinstance(args.fetch_info, str) else None)
+        args.source = detect_source(target_url, default="novelight")
 
     # Resolve delay and jitter defaults based on --fast flag and explicit overrides
     delay = getattr(args, "delay", None)
@@ -645,6 +650,13 @@ def _build_chapter_table(rows: list[dict]) -> Table:
 
 def scrape_novel(args: argparse.Namespace) -> None:
     """Execute the scraping workflow with the provided arguments."""
+    # Resolve source platform if still auto
+    if getattr(args, "source", "auto") == "auto":
+        target_url = getattr(args, "url", None) or (
+            args.fetch_info if isinstance(getattr(args, "fetch_info", None), str) else None
+        )
+        args.source = detect_source(target_url, default="novelight")
+
     # Phase 0: Novel Info fetch mode
     if getattr(args, "fetch_info", False):
         target_url = (

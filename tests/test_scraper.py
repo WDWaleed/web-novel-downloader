@@ -15,7 +15,7 @@ from scraper import (
     parse_arguments,
     scrape_novel,
 )
-from utils import extract_novel_slug, resolve_output_dir, slugify
+from utils import detect_source, extract_novel_slug, resolve_output_dir, slugify
 
 
 class TestScraper(unittest.TestCase):
@@ -312,6 +312,87 @@ class TestScraper(unittest.TestCase):
             expected_dir = os.path.join(self.test_dir, config.BOOK_SLUG)
             self.assertEqual(args.output_dir, expected_dir)
             self.assertTrue(os.path.exists(os.path.join(expected_dir, "chapters")))
+
+    def test_detect_source(self):
+        # Fenrirealm URLs
+        self.assertEqual(
+            detect_source("https://fenrirealm.com/series/absolute-regression"),
+            "fenrirealm",
+        )
+        self.assertEqual(
+            detect_source("https://fenrirealm.com/series/absolute-regression/1"),
+            "fenrirealm",
+        )
+        self.assertEqual(
+            detect_source("HTTPS://WWW.FENRIREALM.COM/SERIES/TEST"),
+            "fenrirealm",
+        )
+        # Novelight URLs
+        self.assertEqual(
+            detect_source("https://novelight.net/book/ghost-story"),
+            "novelight",
+        )
+        self.assertEqual(
+            detect_source("https://novelight.net/book/337"),
+            "novelight",
+        )
+        self.assertEqual(
+            detect_source("HTTPS://NOVELIGHT.NET/BOOK/TEST"),
+            "novelight",
+        )
+        # Unknown domain / non-URL fallback to default
+        self.assertEqual(detect_source("https://example.com/some-novel"), "novelight")
+        self.assertEqual(detect_source("337"), "novelight")
+        self.assertEqual(detect_source(""), "novelight")
+        self.assertEqual(detect_source(None), "novelight")
+        self.assertEqual(detect_source("https://example.com", default="custom"), "custom")
+
+    def test_parse_arguments_source_auto_detection(self):
+        # Default with no args falls back to novelight
+        args = parse_arguments([])
+        self.assertEqual(args.source, "novelight")
+
+        # Positional URLs
+        args = parse_arguments(["https://fenrirealm.com/series/absolute-regression"])
+        self.assertEqual(args.source, "fenrirealm")
+
+        args = parse_arguments(["https://novelight.net/book/ghost-story"])
+        self.assertEqual(args.source, "novelight")
+
+        # --url flag
+        args = parse_arguments(["--url", "https://fenrirealm.com/series/absolute-regression"])
+        self.assertEqual(args.source, "fenrirealm")
+
+        args = parse_arguments(["--url", "https://novelight.net/book/ghost-story"])
+        self.assertEqual(args.source, "novelight")
+
+        # Explicit --source auto
+        args = parse_arguments(["--source", "auto", "https://fenrirealm.com/series/test"])
+        self.assertEqual(args.source, "fenrirealm")
+
+        args = parse_arguments(["--source", "auto", "https://novelight.net/book/test"])
+        self.assertEqual(args.source, "novelight")
+
+        args = parse_arguments(["--source", "auto"])
+        self.assertEqual(args.source, "novelight")
+
+        # Explicit override takes precedence over URL
+        args = parse_arguments(["--source", "fenrirealm", "https://novelight.net/book/test"])
+        self.assertEqual(args.source, "fenrirealm")
+
+        args = parse_arguments(["--source", "novelight", "https://fenrirealm.com/series/test"])
+        self.assertEqual(args.source, "novelight")
+
+        # --info with fenrirealm URL
+        args = parse_arguments(["--info", "https://fenrirealm.com/series/test"])
+        self.assertEqual(args.source, "fenrirealm")
+
+    @patch("fenrirealm.scraper.scrape_fenrirealm")
+    def test_scrape_novel_dispatches_fenrirealm_with_auto_source(self, mock_scrape_fenrirealm):
+        args = parse_arguments(["https://fenrirealm.com/series/absolute-regression", "--max-chapters", "1"])
+        self.assertEqual(args.source, "fenrirealm")
+        scrape_novel(args)
+        mock_scrape_fenrirealm.assert_called_once_with(args)
 
     @patch("fenrirealm.scraper.fetch_chapter_html")
     @patch("fenrirealm.scraper.build_epub")

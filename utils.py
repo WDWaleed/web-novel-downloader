@@ -11,6 +11,27 @@ import unicodedata
 from typing import Optional
 
 
+def detect_source(url: Optional[str] = None, default: str = "novelight") -> str:
+    """Detect platform source ('novelight' or 'fenrirealm') from a URL.
+
+    Args:
+        url: URL string to inspect.
+        default: Fallback source if URL is empty or does not match a known domain.
+
+    Returns:
+        'fenrirealm' if 'fenrirealm.com' is in url,
+        'novelight' if 'novelight.net' is in url,
+        otherwise `default`.
+    """
+    if url:
+        url_lower = str(url).lower()
+        if "fenrirealm.com" in url_lower:
+            return "fenrirealm"
+        if "novelight.net" in url_lower:
+            return "novelight"
+    return default
+
+
 def slugify(text: str) -> str:
     """Convert text into a safe filesystem folder/filename slug.
 
@@ -95,3 +116,4 @@ def resolve_output_dir(
     if not output_dir or os.path.abspath(output_dir) == os.path.abspath(base_default):
         return os.path.join(base_default, slug)
     return output_dir
+
