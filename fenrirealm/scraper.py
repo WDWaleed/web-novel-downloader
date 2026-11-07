@@ -46,7 +46,7 @@ from fenrirealm.config import (
 )
 from fenrirealm.fetcher import fetch_chapter_html, close_browser
 from fenrirealm.parser import parse_fenrirealm_chapter, is_end_of_series
-from fetcher import sleep_with_jitter  # reuse existing rate-limiter
+from fetcher import download_cover_image, sleep_with_jitter  # reuse existing rate-limiter
 from utils import extract_novel_slug, resolve_output_dir, slugify
 
 console = Console(highlight=False, legacy_windows=False)
@@ -119,6 +119,41 @@ def scrape_fenrirealm(args: argparse.Namespace) -> None:
     jitter: float = getattr(args, "jitter", REQUEST_JITTER)
     force: bool = getattr(args, "force", False)
     lang: str = getattr(args, "lang", "en")
+
+    # Resolve cover image (Issue 7: automatic cover fetching and embedding)
+    cover_image_path: Optional[str] = getattr(args, "cover", None)
+    if not cover_image_path:
+        cover_url = getattr(args, "cover_url", None)
+        if not cover_url and getattr(args, "url", None):
+            try:
+                from fenrirealm.parser import fetch_fenrirealm_info
+                series_info = fetch_fenrirealm_info(args.url)
+                if series_info:
+                    if series_info.cover_url:
+                        cover_url = series_info.cover_url
+                    if getattr(args, "title", None) == SERIES_TITLE and series_info.title:
+                        args.title = series_info.title
+                    if getattr(args, "author", None) == SERIES_AUTHOR and series_info.author:
+                        args.author = series_info.author
+            except Exception as exc:
+                logger.debug("Could not fetch Fenrirealm series info for cover: %s", exc)
+
+        if cover_url:
+            try:
+                cover_image_path = download_cover_image(
+                    cover_url=cover_url,
+                    dest_dir=args.output_dir,
+                    force=force,
+                )
+            except Exception as exc:
+                logger.warning("Failed to download cover image: %s", exc)
+
+        if not cover_image_path:
+            for cand in ("cover.jpg", "cover.jpeg", "cover.png", "cover.webp"):
+                cand_path = os.path.join(args.output_dir, cand)
+                if os.path.isfile(cand_path) and os.path.getsize(cand_path) > 0:
+                    cover_image_path = cand_path
+                    break
 
     console.print()
     console.print(
@@ -297,7 +332,7 @@ def scrape_fenrirealm(args: argparse.Namespace) -> None:
                 book_title=args.title,
                 book_author=args.author,
                 book_language=lang,
-                cover_image=getattr(args, "cover", None),
+                cover_image=cover_image_path,
                 css_file=getattr(args, "css", None),
             )
 

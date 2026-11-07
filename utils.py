@@ -10,6 +10,8 @@ import re
 import unicodedata
 from typing import Optional
 
+from fetcher import download_cover_image
+
 
 def detect_source(url: Optional[str] = None, default: str = "novelight") -> str:
     """Detect platform source ('novelight' or 'fenrirealm') from a URL.

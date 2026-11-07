@@ -7,6 +7,7 @@ from __future__ import annotations
 import logging
 import re
 from typing import Optional
+from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
 
@@ -189,6 +190,8 @@ def parse_fenrirealm_series_info(html: str, url: str) -> NovelInfo:
         og_img = soup.find("meta", property="og:image")
         if og_img:
             cover_url = og_img.get("content", "").strip()
+    if cover_url:
+        cover_url = urljoin(url or BASE_URL, cover_url.strip())
 
     # ── Author / Translators ───────────────────────────────────────────────
     author = ""

@@ -612,6 +612,194 @@ class TestScraper(unittest.TestCase):
         self.assertEqual(call_kwargs["book_title"], "Absolute Regression")
         self.assertEqual(call_kwargs["epub_filename"], "absolute-regression.epub")
 
+    @patch("scraper.download_cover_image")
+    @patch("scraper.fetch_novel_details")
+    @patch("scraper.fetch_chapter_index")
+    @patch("scraper.fetch_json")
+    @patch("scraper.build_epub")
+    def test_scrape_novel_auto_downloads_and_embeds_cover(
+        self, mock_build_epub, mock_fetch_json, mock_fetch_index, mock_fetch_details, mock_download_cover
+    ):
+        from parser import NovelInfo
+        info = NovelInfo(
+            url="https://novelight.net/book/solo-leveling",
+            book_id="999",
+            title="Solo Leveling",
+            author="Chugong",
+            first_chapter_id="1001",
+            cover_url="https://novelight.net/media/book/poster/solo.jpg",
+        )
+        ch1 = ChapterMeta("1001", 1, "1", "Prologue", "1 vol. 1 chapter - Prologue", "", is_locked=False)
+        mock_fetch_details.return_value = (info, [ch1])
+        mock_fetch_index.return_value = [ch1]
+        mock_fetch_json.return_value = {"content": "<div>Awakening</div>"}
+        mock_build_epub.return_value = "solo-leveling.epub"
+
+        expected_cover_path = os.path.join(self.test_dir, "solo-leveling", "cover.jpg")
+        mock_download_cover.return_value = expected_cover_path
+
+        args = parse_arguments([
+            "--url", "https://novelight.net/book/solo-leveling",
+            "--output-dir", self.test_dir,
+            "--max-chapters", "1",
+            "--delay", "0.0",
+            "--jitter", "0.0",
+        ])
+        scrape_novel(args)
+
+        mock_download_cover.assert_called_once()
+        call_kwargs = mock_download_cover.call_args.kwargs
+        self.assertEqual(call_kwargs["cover_url"], "https://novelight.net/media/book/poster/solo.jpg")
+
+        mock_build_epub.assert_called_once()
+        epub_kwargs = mock_build_epub.call_args.kwargs
+        self.assertEqual(epub_kwargs["cover_image"], expected_cover_path)
+
+    @patch("scraper.download_cover_image")
+    @patch("scraper.fetch_novel_details")
+    @patch("scraper.fetch_chapter_index")
+    @patch("scraper.fetch_json")
+    @patch("scraper.build_epub")
+    def test_scrape_novel_explicit_cover_bypasses_auto_download(
+        self, mock_build_epub, mock_fetch_json, mock_fetch_index, mock_fetch_details, mock_download_cover
+    ):
+        from parser import NovelInfo
+        info = NovelInfo(
+            url="https://novelight.net/book/solo-leveling",
+            book_id="999",
+            title="Solo Leveling",
+            author="Chugong",
+            first_chapter_id="1001",
+            cover_url="https://novelight.net/media/book/poster/solo.jpg",
+        )
+        ch1 = ChapterMeta("1001", 1, "1", "Prologue", "1 vol. 1 chapter - Prologue", "", is_locked=False)
+        mock_fetch_details.return_value = (info, [ch1])
+        mock_fetch_index.return_value = [ch1]
+        mock_fetch_json.return_value = {"content": "<div>Awakening</div>"}
+        mock_build_epub.return_value = "solo-leveling.epub"
+
+        args = parse_arguments([
+            "--url", "https://novelight.net/book/solo-leveling",
+            "--output-dir", self.test_dir,
+            "--cover", "custom_cover.png",
+            "--max-chapters", "1",
+            "--delay", "0.0",
+            "--jitter", "0.0",
+        ])
+        scrape_novel(args)
+
+        mock_download_cover.assert_not_called()
+        mock_build_epub.assert_called_once()
+        epub_kwargs = mock_build_epub.call_args.kwargs
+        self.assertEqual(epub_kwargs["cover_image"], "custom_cover.png")
+
+    @patch("fenrirealm.scraper.download_cover_image")
+    @patch("fenrirealm.parser.fetch_fenrirealm_info")
+    @patch("fenrirealm.scraper.fetch_chapter_html")
+    @patch("fenrirealm.scraper.build_epub")
+    def test_scrape_fenrirealm_auto_downloads_and_embeds_cover(
+        self, mock_build_epub, mock_fetch_html, mock_fetch_info, mock_download_cover
+    ):
+        from parser import NovelInfo
+        from fenrirealm.scraper import scrape_fenrirealm
+
+        mock_fetch_info.return_value = NovelInfo(
+            url="https://fenrirealm.com/series/absolute-regression",
+            book_id="absolute-regression",
+            title="Absolute Regression",
+            author="Author Name",
+            first_chapter_id="1",
+            cover_url="https://fenrirealm.com/media/covers/regression.jpg",
+        )
+        mock_fetch_html.return_value = (
+            "<html><body><div class='chapter-view'>"
+            "<div class='text-center'><h2>Absolute Regression - Ch 1</h2></div>"
+            "<div class='reader-area touch-manipulation'><p>Paragraph 1</p></div>"
+            "</div></body></html>"
+        )
+        expected_cover_path = os.path.join(self.test_dir, "absolute-regression", "cover.jpg")
+        mock_download_cover.return_value = expected_cover_path
+        mock_build_epub.return_value = "absolute-regression.epub"
+
+        args = parse_arguments([
+            "https://fenrirealm.com/series/absolute-regression",
+            "--output-dir", self.test_dir,
+            "--max-chapters", "1",
+            "--delay", "0.0",
+            "--jitter", "0.0",
+        ])
+        scrape_fenrirealm(args)
+
+        mock_download_cover.assert_called_once()
+        self.assertEqual(
+            mock_download_cover.call_args.kwargs["cover_url"],
+            "https://fenrirealm.com/media/covers/regression.jpg",
+        )
+        mock_build_epub.assert_called_once()
+        epub_kwargs = mock_build_epub.call_args.kwargs
+        self.assertEqual(epub_kwargs["cover_image"], expected_cover_path)
+
+    @patch("fenrirealm.scraper.fetch_chapter_html")
+    @patch("fenrirealm.scraper.build_epub")
+    def test_scrape_fenrirealm_detects_existing_cover_file(
+        self, mock_build_epub, mock_fetch_html
+    ):
+        from fenrirealm.scraper import scrape_fenrirealm
+
+        cover_path = os.path.join(self.test_dir, "cover.jpg")
+        with open(cover_path, "wb") as f:
+            f.write(b"existing-cover-bytes")
+
+        mock_fetch_html.return_value = (
+            "<html><body><div class='chapter-view'>"
+            "<div class='text-center'><h2>Absolute Regression - Ch 1</h2></div>"
+            "<div class='reader-area touch-manipulation'><p>Paragraph 1</p></div>"
+            "</div></body></html>"
+        )
+        mock_build_epub.return_value = "absolute-regression.epub"
+
+        args = parse_arguments([
+            "--source", "fenrirealm",
+            "--output-dir", self.test_dir,
+            "--max-chapters", "1",
+            "--delay", "0.0",
+            "--jitter", "0.0",
+        ])
+        scrape_fenrirealm(args)
+
+        mock_build_epub.assert_called_once()
+        epub_kwargs = mock_build_epub.call_args.kwargs
+        self.assertEqual(epub_kwargs["cover_image"], cover_path)
+
+    @patch("fenrirealm.scraper.fetch_chapter_html")
+    @patch("fenrirealm.scraper.build_epub")
+    def test_scrape_fenrirealm_explicit_cover_overrides(
+        self, mock_build_epub, mock_fetch_html
+    ):
+        from fenrirealm.scraper import scrape_fenrirealm
+
+        mock_fetch_html.return_value = (
+            "<html><body><div class='chapter-view'>"
+            "<div class='text-center'><h2>Absolute Regression - Ch 1</h2></div>"
+            "<div class='reader-area touch-manipulation'><p>Paragraph 1</p></div>"
+            "</div></body></html>"
+        )
+        mock_build_epub.return_value = "absolute-regression.epub"
+
+        args = parse_arguments([
+            "--source", "fenrirealm",
+            "--output-dir", self.test_dir,
+            "--cover", "my_custom_cover.jpg",
+            "--max-chapters", "1",
+            "--delay", "0.0",
+            "--jitter", "0.0",
+        ])
+        scrape_fenrirealm(args)
+
+        mock_build_epub.assert_called_once()
+        epub_kwargs = mock_build_epub.call_args.kwargs
+        self.assertEqual(epub_kwargs["cover_image"], "my_custom_cover.jpg")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -35,7 +35,7 @@ from epub_builder import (
     get_saved_chapter_files,
     save_chapter_file,
 )
-from fetcher import fetch_json, fetch_page, sleep_with_jitter
+from fetcher import download_cover_image, fetch_json, fetch_page, sleep_with_jitter
 from parser import (
     Chapter,
     ChapterMeta,
@@ -712,6 +712,7 @@ def scrape_novel(args: argparse.Namespace) -> None:
 
     # If novel URL is specified for downloading, auto-fetch details to resolve IDs
     novel_description: Optional[str] = None
+    novel_cover_url: Optional[str] = None
     if getattr(args, "url", None):
         with console.status("[bold cyan]Fetching novel details from URL...[/bold cyan]", spinner="dots"):
             info, _ = fetch_novel_details(args.url)
@@ -725,6 +726,8 @@ def scrape_novel(args: argparse.Namespace) -> None:
                 args.author = info.author
             if info.description:
                 novel_description = info.description
+            if info.cover_url:
+                novel_cover_url = info.cover_url
 
     # Populate defaults for any metadata still unset
     if getattr(args, "title", None) is None:
@@ -743,6 +746,27 @@ def scrape_novel(args: argparse.Namespace) -> None:
 
     chapters_dir = os.path.join(args.output_dir, "chapters")
     os.makedirs(chapters_dir, exist_ok=True)
+
+    # Resolve cover image (Issue 7: automatic cover fetching and embedding)
+    cover_image_path: Optional[str] = getattr(args, "cover", None)
+    if not cover_image_path:
+        cover_url = getattr(args, "cover_url", None) or novel_cover_url
+        if cover_url:
+            try:
+                cover_image_path = download_cover_image(
+                    cover_url=cover_url,
+                    dest_dir=args.output_dir,
+                    force=getattr(args, "force", False),
+                )
+            except Exception as exc:
+                logger.warning("Failed downloading cover image: %s", exc)
+
+        if not cover_image_path:
+            for cand in ("cover.jpg", "cover.jpeg", "cover.png", "cover.webp"):
+                cand_path = os.path.join(args.output_dir, cand)
+                if os.path.isfile(cand_path) and os.path.getsize(cand_path) > 0:
+                    cover_image_path = cand_path
+                    break
 
     # Header banner
     console.print()
@@ -924,7 +948,7 @@ def scrape_novel(args: argparse.Namespace) -> None:
                 book_author=args.author,
                 book_language=args.lang,
                 book_description=novel_description,
-                cover_image=args.cover,
+                cover_image=cover_image_path,
                 css_file=args.css,
             )
 
