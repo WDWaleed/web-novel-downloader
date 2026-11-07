@@ -82,6 +82,29 @@ class TestParser(unittest.TestCase):
         )
         self.assertEqual(meta_no_sub.display_title, "Vol. 1 Ch. 2")
 
+        # Flat chapter (volume == 0) — Issue 6
+        flat_with_sub = ChapterMeta(
+            chapter_id="150475",
+            volume=0,
+            chapter_number="3",
+            title="The Beginning of the Journey",
+            raw_title="Ch. 3",
+            url="https://novelight.net/book/chapter/150475",
+            is_locked=False,
+        )
+        self.assertEqual(flat_with_sub.display_title, "Ch. 3 - The Beginning of the Journey")
+
+        flat_no_sub = ChapterMeta(
+            chapter_id="150476",
+            volume=0,
+            chapter_number="4",
+            title="",
+            raw_title="Ch. 4",
+            url="https://novelight.net/book/chapter/150476",
+            is_locked=False,
+        )
+        self.assertEqual(flat_no_sub.display_title, "Ch. 4")
+
     def test_parse_chapter_list(self):
         html = """
         <div class="chapters">

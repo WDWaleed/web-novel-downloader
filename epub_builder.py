@@ -167,6 +167,12 @@ def sanitize_saved_chapter_file(filepath: str) -> bool:
             vol = int(m_head.group(1))
             ch = m_head.group(2)
             title = m_head.group(3) or ""
+        else:
+            m_flat = re.match(r"^Ch\.?\s*([\d.]+)(?:\s*-\s*(.*))?$", h_text, re.I)
+            if m_flat:
+                vol = 0
+                ch = m_flat.group(1)
+                title = m_flat.group(2) or ""
 
         meta = ChapterMeta(
             chapter_id="0",
@@ -232,14 +238,20 @@ def save_chapter_file(
         else ""
     )
 
+    # Determine display title for the file based on volume structure
+    if has_vol:
+        file_display_title = chapter.display_title
+    else:
+        file_display_title = re.sub(r"^Vol\.\s*\d+\s*", "", chapter.display_title)
+
     html_content = f"""<!DOCTYPE html>
 <html lang="{lang}">
 <head>
     <meta charset="UTF-8">{next_meta}
-    <title>{chapter.display_title}</title>
+    <title>{file_display_title}</title>
 </head>
 <body>
-<{heading_tag}>{chapter.display_title}</{heading_tag}>
+<{heading_tag}>{file_display_title}</{heading_tag}>
 {chapter.body_html}
 </body>
 </html>
@@ -344,6 +356,7 @@ def build_epub(
     book_description: Optional[str] = None,
     cover_image: Optional[str] = None,
     css_file: Optional[str] = "styles.css",
+    use_volumes: Optional[bool] = None,
 ) -> str:
     """
     Compile chapters into an EPUB3 file using Pandoc.
@@ -366,8 +379,18 @@ def build_epub(
 
     # 1. Gather files to compile
     if chapters:
+        if use_volumes is not None:
+            chapters_use_vols = use_volumes
+        else:
+            distinct_vols = {getattr(ch, "volume", 0) for ch in chapters if getattr(ch, "volume", 0) > 0}
+            explicit_vol = any(
+                "vol" in getattr(ch, "raw_title", "").lower() or "vol." in getattr(ch, "display_title", "").lower()
+                for ch in chapters
+            )
+            chapters_use_vols = len(distinct_vols) > 1 and explicit_vol
+
         for ch in chapters:
-            path = save_chapter_file(ch, chapters_folder, lang=book_language)
+            path = save_chapter_file(ch, chapters_folder, lang=book_language, use_volumes=chapters_use_vols)
             files_to_compile.append(path)
     elif chapter_files:
         files_to_compile = [os.path.abspath(f) for f in chapter_files]
@@ -382,7 +405,10 @@ def build_epub(
         sanitize_saved_chapter_file(f)
 
     # 3. Check if chapters are organized by volumes
-    has_volumes = any(re.search(r"vol_\d+", f, re.IGNORECASE) for f in files_to_compile)
+    if use_volumes is not None:
+        has_volumes = use_volumes
+    else:
+        has_volumes = any(re.search(r"vol_\d+", f, re.IGNORECASE) for f in files_to_compile)
 
     final_file_list: list[str] = []
     if has_volumes:

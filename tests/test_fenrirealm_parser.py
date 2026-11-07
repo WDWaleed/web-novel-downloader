@@ -75,6 +75,11 @@ class TestFenrirealmParser(unittest.TestCase):
         ch = parse_fenrirealm_chapter(SAMPLE_CHAPTER_HTML, chapter_number=1, url="https://example.com/1")
         self.assertIsNotNone(ch)
         self.assertIn("Fall", ch.display_title)
+        # Issue 6: Fenrirealm has no volume concept — flat chapter with volume=0
+        self.assertEqual(ch.meta.volume, 0)
+        self.assertEqual(ch.volume, 0)
+        self.assertNotIn("Vol.", ch.display_title)
+        self.assertTrue(ch.display_title.startswith("Ch. 1 -"))
 
     def test_parse_chapter_extracts_body(self):
         ch = parse_fenrirealm_chapter(SAMPLE_CHAPTER_HTML, chapter_number=1, url="https://example.com/1")

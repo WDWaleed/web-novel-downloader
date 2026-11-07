@@ -282,7 +282,7 @@ def scrape_fenrirealm(args: argparse.Namespace) -> None:
 
                 # Save
                 consecutive_misses = 0
-                save_chapter_file(chapter, output_dir=chapters_dir, lang=lang)
+                save_chapter_file(chapter, output_dir=chapters_dir, lang=lang, use_volumes=False)
                 rows.append({
                     "ordinal": chapter_number,
                     "chapter_number": chapter_number,
@@ -334,6 +334,7 @@ def scrape_fenrirealm(args: argparse.Namespace) -> None:
                 book_language=lang,
                 cover_image=cover_image_path,
                 css_file=getattr(args, "css", None),
+                use_volumes=False,
             )
 
         console.print()

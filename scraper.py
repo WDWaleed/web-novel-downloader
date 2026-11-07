@@ -130,10 +130,23 @@ def fetch_novel_details(
     info.free_chapters_count = len(free_chapters)
     info.locked_chapters_count = len(locked_chapters)
 
+    distinct_volumes = {ch.volume for ch in chapters if ch.volume > 0}
+    explicit_vol_titles = any(
+        "vol." in ch.raw_title.lower() or "vol." in ch.display_title.lower()
+        for ch in chapters
+    )
+    has_volumes = len(distinct_volumes) > 1 and explicit_vol_titles
+
+    if not has_volumes:
+        for ch in chapters:
+            ch.volume = 0
+        info.volumes_count = 0
+    else:
+        info.volumes_count = len(distinct_volumes)
+
     if chapters:
         info.first_chapter_title = chapters[0].display_title
         info.latest_chapter_title = chapters[-1].display_title
-        info.volumes_count = len(set(ch.volume for ch in chapters if ch.volume > 0))
 
     if free_chapters:
         info.free_chapter_range = (
@@ -669,7 +682,7 @@ def _build_chapter_table(rows: list[dict]) -> Table:
     for r in rows:
         table.add_row(
             str(r["ordinal"]),
-            str(r.get("volume", "-")),
+            str(r["volume"]) if r.get("volume", 0) > 0 else "-",
             str(r.get("chapter_number", "-")),
             r["title"],
             r["status"],
@@ -784,6 +797,10 @@ def scrape_novel(args: argparse.Namespace) -> None:
 
     if args.build_only:
         logger.info("Build-only mode active. Skipping chapter downloads.")
+        # Detect volumes from already-saved chapter files for build-only mode
+        saved_for_check = get_saved_chapter_files(chapters_dir)
+        import re as _re
+        has_volumes = any(_re.search(r"vol_\d+", f, _re.IGNORECASE) for f in saved_for_check)
     else:
         # Phase 1: Fetch Index
         with console.status("[bold cyan]Fetching chapter index from Novelight...[/bold cyan]", spinner="dots"):
@@ -791,6 +808,14 @@ def scrape_novel(args: argparse.Namespace) -> None:
                 book_id=args.book_id,
                 chapter_id=args.first_chapter_id,
             )
+
+        # Detect whether novel actually uses multiple volumes (Issue 6)
+        distinct_volumes = {ch.volume for ch in all_chapters if ch.volume > 0}
+        explicit_vol_titles = any(
+            "vol." in ch.raw_title.lower() or "vol." in ch.display_title.lower()
+            for ch in all_chapters
+        )
+        has_volumes = len(distinct_volumes) > 1 and explicit_vol_titles
 
         # Parse volumes filter if provided
         volumes_set = None
@@ -807,6 +832,11 @@ def scrape_novel(args: argparse.Namespace) -> None:
             start_chapter=args.start_chapter,
             max_chapters=args.max_chapters,
         )
+
+        # If novel has flat chapters (no multiple volumes), normalize chapter volume to 0
+        if not has_volumes:
+            for ch in all_chapters:
+                ch.volume = 0
 
         total_available = len(all_chapters)
         total_selected = len(target_chapters)
@@ -888,7 +918,7 @@ def scrape_novel(args: argparse.Namespace) -> None:
                             })
                         else:
                             chapter = parse_chapter(content_html, meta=meta, ordinal=idx)
-                            save_chapter_file(chapter, output_dir=chapters_dir, lang=args.lang)
+                            save_chapter_file(chapter, output_dir=chapters_dir, lang=args.lang, use_volumes=has_volumes)
                             rows.append({
                                 "ordinal": idx,
                                 "volume": meta.volume,
@@ -950,6 +980,7 @@ def scrape_novel(args: argparse.Namespace) -> None:
                 book_description=novel_description,
                 cover_image=cover_image_path,
                 css_file=args.css,
+                use_volumes=has_volumes,
             )
 
         console.print()

@@ -119,10 +119,20 @@ class ChapterMeta:
 
     @property
     def display_title(self) -> str:
-        """Formatted title for EPUB headings and table of contents."""
+        """Formatted title for EPUB headings and table of contents.
+
+        When ``volume == 0`` the chapter is treated as a flat (no-volume) entry
+        and the ``Vol. X`` prefix is omitted, producing clean TOC entries like
+        ``Ch. 3 - Title`` instead of the artificial ``Vol. 1 Ch. 3 - Title``.
+        """
+        if self.volume > 0:
+            if self.title:
+                return f"Vol. {self.volume} Ch. {self.chapter_number} - {self.title}"
+            return f"Vol. {self.volume} Ch. {self.chapter_number}"
+        # Flat chapter (no volume structure)
         if self.title:
-            return f"Vol. {self.volume} Ch. {self.chapter_number} - {self.title}"
-        return f"Vol. {self.volume} Ch. {self.chapter_number}"
+            return f"Ch. {self.chapter_number} - {self.title}"
+        return f"Ch. {self.chapter_number}"
 
 
 @dataclass

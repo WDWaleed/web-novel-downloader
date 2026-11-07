@@ -148,6 +148,69 @@ class TestEpubBuilder(unittest.TestCase):
         # Verify pandoc_defaults.yaml was written in output directory
         defaults_file = os.path.join(self.test_dir, "pandoc_defaults.yaml")
         self.assertTrue(os.path.exists(defaults_file))
+        with open(defaults_file, "r", encoding="utf-8") as f:
+            content = f.read()
+        self.assertIn("toc-depth: 2", content)
+        self.assertIn("split-level: 2", content)
+        self.assertIn("vol_01_title.html", content)
+
+    def test_flat_chapters_saving_and_compilation(self):
+        """Issue 6: Flat chapters without volume hierarchy produce 1-level TOC and no volume title pages."""
+        from parser import ChapterMeta
+
+        meta1 = ChapterMeta(
+            chapter_id="201",
+            volume=0,
+            chapter_number="1",
+            title="Flat Start",
+            raw_title="Ch. 1",
+            url="",
+            is_locked=False,
+        )
+        meta2 = ChapterMeta(
+            chapter_id="202",
+            volume=0,
+            chapter_number="2",
+            title="Flat Middle",
+            raw_title="Ch. 2",
+            url="",
+            is_locked=False,
+        )
+
+        ch1 = Chapter(meta=meta1, body_html="<p>Ch 1 Content</p>", display_title="Ch. 1 - Flat Start", ordinal=1)
+        ch2 = Chapter(meta=meta2, body_html="<p>Ch 2 Content</p>", display_title="Ch. 2 - Flat Middle", ordinal=2)
+
+        flat_dir = os.path.join(self.test_dir, "flat-novel")
+        p1 = save_chapter_file(ch1, output_dir=flat_dir, use_volumes=False)
+        p2 = save_chapter_file(ch2, output_dir=flat_dir, use_volumes=False)
+
+        # Ensure no vol_XX subdirectories were created
+        self.assertNotIn("vol_", p1)
+        self.assertNotIn("vol_", p2)
+        with open(p1, "r", encoding="utf-8") as f:
+            f_content = f.read()
+            self.assertIn("<h1>Ch. 1 - Flat Start</h1>", f_content)
+            self.assertNotIn("<h2>", f_content)
+            self.assertNotIn("Vol.", f_content)
+
+        # Build EPUB with flat chapters
+        epub_path = build_epub(
+            chapters=[ch1, ch2],
+            output_dir=flat_dir,
+            epub_filename="flat_test.epub",
+            book_title="Flat Novel",
+            css_file=None,
+            use_volumes=False,
+        )
+        self.assertTrue(os.path.exists(epub_path))
+
+        defaults_file = os.path.join(flat_dir, "pandoc_defaults.yaml")
+        self.assertTrue(os.path.exists(defaults_file))
+        with open(defaults_file, "r", encoding="utf-8") as f:
+            defaults_content = f.read()
+        self.assertIn("toc-depth: 1", defaults_content)
+        self.assertIn("split-level: 1", defaults_content)
+        self.assertNotIn("vol_", defaults_content)
 
     def test_write_pandoc_defaults(self):
         defaults_path = os.path.join(self.test_dir, "test_defaults.yaml")

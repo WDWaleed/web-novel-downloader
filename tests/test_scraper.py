@@ -114,7 +114,7 @@ class TestScraper(unittest.TestCase):
     @patch("scraper.build_epub")
     def test_scrape_novel_mocked_run(self, mock_build_epub, mock_fetch_json, mock_fetch_index):
         ch1 = ChapterMeta("150473", 1, "1", "First Chapter", "1 vol. 1 chapter - First Chapter", "", is_locked=False)
-        ch2 = ChapterMeta("150474", 1, "2", "Second Chapter", "1 vol. 2 chapter - Second Chapter", "", is_locked=False)
+        ch2 = ChapterMeta("150474", 2, "2", "Second Chapter", "2 vol. 2 chapter - Second Chapter", "", is_locked=False)
         mock_fetch_index.return_value = [ch1, ch2]
 
         content_1 = {"content": '<div class="chapter-text"><div>Paragraph in ch1</div></div>'}
@@ -133,9 +133,43 @@ class TestScraper(unittest.TestCase):
 
         chapters_dir = os.path.join(self.test_dir, "chapters")
         vol1_dir = os.path.join(chapters_dir, "vol_01")
+        vol2_dir = os.path.join(chapters_dir, "vol_02")
         self.assertTrue(os.path.exists(os.path.join(vol1_dir, "chapter_0001.html")))
-        self.assertTrue(os.path.exists(os.path.join(vol1_dir, "chapter_0002.html")))
+        self.assertTrue(os.path.exists(os.path.join(vol2_dir, "chapter_0002.html")))
         mock_build_epub.assert_called_once()
+        self.assertTrue(mock_build_epub.call_args[1].get("use_volumes"))
+
+    @patch("scraper.fetch_chapter_index")
+    @patch("scraper.fetch_json")
+    @patch("scraper.build_epub")
+    def test_scrape_novel_flat_chapters_run(self, mock_build_epub, mock_fetch_json, mock_fetch_index):
+        # Novel with single volume or no multi-volume structure should save flat chapters without vol_XX directories
+        ch1 = ChapterMeta("150473", 1, "1", "First Chapter", "1 vol. 1 chapter - First Chapter", "", is_locked=False)
+        ch2 = ChapterMeta("150474", 1, "2", "Second Chapter", "1 vol. 2 chapter - Second Chapter", "", is_locked=False)
+        mock_fetch_index.return_value = [ch1, ch2]
+
+        content_1 = {"content": '<div class="chapter-text"><div>Paragraph in ch1</div></div>'}
+        content_2 = {"content": '<div class="chapter-text"><div>Paragraph in ch2</div></div>'}
+        mock_fetch_json.side_effect = [content_1, content_2]
+        mock_build_epub.return_value = os.path.join(self.test_dir, "novel.epub")
+
+        args = parse_arguments([
+            "--output-dir", self.test_dir,
+            "--max-chapters", "2",
+            "--delay", "0.0",
+            "--jitter", "0.0",
+        ])
+
+        scrape_novel(args)
+
+        chapters_dir = os.path.join(self.test_dir, "chapters")
+        # Ensure flat chapter files exist directly under chapters_dir
+        self.assertTrue(os.path.exists(os.path.join(chapters_dir, "chapter_0001.html")))
+        self.assertTrue(os.path.exists(os.path.join(chapters_dir, "chapter_0002.html")))
+        # Ensure no artificial vol_01 directory was created
+        self.assertFalse(os.path.exists(os.path.join(chapters_dir, "vol_01")))
+        mock_build_epub.assert_called_once()
+        self.assertFalse(mock_build_epub.call_args[1].get("use_volumes"))
 
     @patch("scraper.fetch_chapter_index")
     @patch("scraper.build_epub")
@@ -237,6 +271,37 @@ class TestScraper(unittest.TestCase):
         self.assertAlmostEqual(info.free_percentage, 66.66666666666667)
         self.assertIn("Ch. 1 - Ch. 2", info.free_chapter_range)
         self.assertIn("Ch. 3 - Ch. 3", info.locked_chapter_range)
+
+    @patch("scraper.fetch_chapter_index")
+    @patch("scraper.fetch_page")
+    def test_fetch_novel_details_flat_novel(self, mock_fetch_page, mock_fetch_index):
+        """Issue 6: Flat novels with only 1 volume report volumes_count = 0 and flat chapter titles."""
+        from scraper import fetch_novel_details
+        sample_html = """
+        <html>
+        <body>
+            <h1 class="clamp">Flat Book Title</h1>
+            <a href="/book/chapter/6001" class="read-btn">Start Reading</a>
+            <script>const BOOK_ID = "456";</script>
+        </body>
+        </html>
+        """
+        mock_fetch_page.return_value = sample_html
+
+        ch1 = ChapterMeta("6001", 1, "1", "Flat One", "1 vol. 1 chapter - Flat One", "", is_locked=False)
+        ch2 = ChapterMeta("6002", 1, "2", "Flat Two", "1 vol. 2 chapter - Flat Two", "", is_locked=False)
+        mock_fetch_index.return_value = [ch1, ch2]
+
+        info, chapters = fetch_novel_details("https://novelight.net/book/flat-book")
+        self.assertEqual(info.title, "Flat Book Title")
+        self.assertEqual(info.total_chapters, 2)
+        # volumes_count must be 0 for flat novels (no artificial volume)
+        self.assertEqual(info.volumes_count, 0)
+        # Chapters must be normalized to volume 0
+        self.assertEqual(chapters[0].volume, 0)
+        self.assertEqual(chapters[1].volume, 0)
+        self.assertEqual(info.first_chapter_title, "Ch. 1 - Flat One")
+        self.assertEqual(info.latest_chapter_title, "Ch. 2 - Flat Two")
 
     @patch("scraper.display_novel_info_flow")
     def test_scrape_novel_info_flow_called(self, mock_display_flow):

@@ -75,10 +75,10 @@ def parse_fenrirealm_chapter(
 
     body_html = "\n".join(paragraphs)
 
-    # Build ChapterMeta — Fenrirealm has no volume concept; default to Vol 1
+    # Build ChapterMeta — Fenrirealm has no volume concept; volume=0 marks flat chapter
     meta = ChapterMeta(
         chapter_id=str(chapter_number),
-        volume=1,
+        volume=0,
         chapter_number=str(chapter_number),
         title=raw_title,
         raw_title=raw_title,
