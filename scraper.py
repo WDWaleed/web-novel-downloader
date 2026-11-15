@@ -254,7 +254,7 @@ def display_novel_info(info: NovelInfo, chapters: Optional[list[ChapterMeta]] = 
     if info.latest_chapter_title:
         avail_table.add_row("Latest Chapter", info.latest_chapter_title)
 
-    # Only show API identifiers for Novelight (Fenrirealm has no numeric book/chapter IDs)
+    # Only show API identifiers for Novelight (Fenrir Realm has no numeric book/chapter IDs)
     if detect_source(info.url) != "fenrirealm":
         avail_table.add_row(
             "API Identifiers",
@@ -351,13 +351,13 @@ def display_novel_info(info: NovelInfo, chapters: Optional[list[ChapterMeta]] = 
 def display_novel_info_flow(url_or_slug: str) -> None:
     """Fetch and display novel details with rich progress spinner.
 
-    Automatically dispatches to the Fenrirealm info fetcher when the URL
+    Automatically dispatches to the Fenrir Realm info fetcher when the URL
     contains 'fenrirealm.com', otherwise falls back to the Novelight flow.
     """
     if detect_source(url_or_slug) == "fenrirealm":
         from fenrirealm.parser import fetch_fenrirealm_info
         with console.status(
-            f"[bold cyan]Fetching Fenrirealm series info from {url_or_slug}...[/bold cyan]",
+            f"[bold cyan]Fetching Fenrir Realm series info from {url_or_slug}...[/bold cyan]",
             spinner="dots",
         ):
             info = fetch_fenrirealm_info(url_or_slug)
@@ -717,7 +717,7 @@ def scrape_novel(args: argparse.Namespace) -> None:
         display_novel_info_flow(target_url)
         return
 
-    # Dispatch to Fenrirealm scraper if --source=fenrirealm
+    # Dispatch to Fenrir Realm scraper if --source=fenrirealm
     if getattr(args, "source", "novelight") == "fenrirealm":
         from fenrirealm.scraper import scrape_fenrirealm
         scrape_fenrirealm(args)

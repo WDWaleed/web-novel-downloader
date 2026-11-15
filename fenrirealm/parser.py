@@ -1,5 +1,5 @@
 """
-HTML parser for Fenrirealm.com chapter pages and series overview pages.
+HTML parser for Fenrir Realm.com chapter pages and series overview pages.
 Extracts title, body, and novel metadata using BeautifulSoup.
 """
 
@@ -28,7 +28,7 @@ def parse_fenrirealm_chapter(
     url: str,
 ) -> Optional[Chapter]:
     """
-    Parse a rendered Fenrirealm chapter page.
+    Parse a rendered Fenrir Realm chapter page.
     Returns None if the chapter does not exist (404-equivalent: no chapter-view div).
     """
     soup = BeautifulSoup(html, "html.parser")
@@ -75,7 +75,7 @@ def parse_fenrirealm_chapter(
 
     body_html = "\n".join(paragraphs)
 
-    # Build ChapterMeta — Fenrirealm has no volume concept; volume=0 marks flat chapter
+    # Build ChapterMeta — Fenrir Realm has no volume concept; volume=0 marks flat chapter
     meta = ChapterMeta(
         chapter_id=str(chapter_number),
         volume=0,
@@ -110,7 +110,7 @@ def is_end_of_series(html: str) -> bool:
 
 
 def _normalize_series_url(url_or_slug: str) -> str:
-    """Convert a slug, chapter URL, or series URL into a canonical Fenrirealm series URL."""
+    """Convert a slug, chapter URL, or series URL into a canonical Fenrir Realm series URL."""
     s = url_or_slug.strip().rstrip("/")
     # Extract series slug if URL has /series/<slug>
     m = re.search(r"/series/([a-zA-Z0-9_-]+)", s)
@@ -127,7 +127,7 @@ def _normalize_series_url(url_or_slug: str) -> str:
 
 def parse_fenrirealm_series_info(html: str, url: str) -> NovelInfo:
     """
-    Parse a rendered Fenrirealm series overview page and return a ``NovelInfo``
+    Parse a rendered Fenrir Realm series overview page and return a ``NovelInfo``
     instance populated with as many fields as the page exposes.
 
     Selector strategy (graceful fallback for each field):
@@ -269,7 +269,7 @@ def parse_fenrirealm_series_info(html: str, url: str) -> NovelInfo:
             f"({total_chapters:,} chapters)"
         )
 
-    # Derive slug from URL for the book_id field (Fenrirealm has no numeric book ID)
+    # Derive slug from URL for the book_id field (Fenrir Realm has no numeric book ID)
     slug = ""
     m_slug = re.search(r"/series/([a-zA-Z0-9_-]+)", url)
     if m_slug:
@@ -278,7 +278,7 @@ def parse_fenrirealm_series_info(html: str, url: str) -> NovelInfo:
     return NovelInfo(
         url=url,
         book_id=slug,          # repurpose book_id as the series slug identifier
-        first_chapter_id="1",  # Fenrirealm chapters start at 1
+        first_chapter_id="1",  # Fenrir Realm chapters start at 1
         title=title or slug or "Unknown",
         author=author,
         description=description,
@@ -288,7 +288,7 @@ def parse_fenrirealm_series_info(html: str, url: str) -> NovelInfo:
         status=status,
         translators=translators,
         total_chapters=total_chapters,
-        free_chapters_count=total_chapters,  # all Fenrirealm chapters are free
+        free_chapters_count=total_chapters,  # all Fenrir Realm chapters are free
         locked_chapters_count=0,
         free_chapter_range=free_chapter_range,
         first_chapter_title=first_chapter_title,
@@ -298,7 +298,7 @@ def parse_fenrirealm_series_info(html: str, url: str) -> NovelInfo:
 
 def fetch_fenrirealm_info(url_or_slug: str) -> NovelInfo:
     """
-    Fetch and parse the Fenrirealm series overview page for the given URL or slug.
+    Fetch and parse the Fenrir Realm series overview page for the given URL or slug.
 
     Args:
         url_or_slug: Full series URL (``https://fenrirealm.com/series/<slug>``)

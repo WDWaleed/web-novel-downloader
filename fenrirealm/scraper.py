@@ -1,5 +1,5 @@
 """
-Fenrirealm scraping orchestrator.
+Fenrir Realm scraping orchestrator.
 Iterates chapter URLs sequentially, handles Cloudflare via persistent browser,
 parses HTML, and passes chapters to the existing save + EPUB pipeline.
 """
@@ -64,7 +64,7 @@ STATUS_GAP      = "[yellow]Gap[/yellow]"
 def _build_summary_table(rows: list[dict]) -> Table:
     """Build a Rich Table summarising scraped chapters."""
     table = Table(
-        title="Fenrirealm Chapter Download Summary",
+        title="Fenrir Realm Chapter Download Summary",
         show_header=True,
         header_style="bold magenta",
         border_style="bright_black",
@@ -87,13 +87,13 @@ def _build_summary_table(rows: list[dict]) -> Table:
 
 def _is_chapter_cached(chapter_number: int, chapters_dir: str) -> bool:
     """Return True if a chapter file already exists on disk and is non-empty."""
-    # Fenrirealm chapters have no volume nesting (all in root chapters_dir)
+    # Fenrir Realm chapters have no volume nesting (all in root chapters_dir)
     path = get_chapter_filepath(chapter_number, output_dir=chapters_dir)
     return os.path.isfile(path) and os.path.getsize(path) > 0
 
 
 def scrape_fenrirealm(args: argparse.Namespace) -> None:
-    """Fenrirealm download orchestrator — called from scraper.py when --source=fenrirealm."""
+    """Fenrir Realm download orchestrator — called from scraper.py when --source=fenrirealm."""
     atexit.register(close_browser)
 
     slug = extract_novel_slug(
@@ -136,7 +136,7 @@ def scrape_fenrirealm(args: argparse.Namespace) -> None:
                     if getattr(args, "author", None) == SERIES_AUTHOR and series_info.author:
                         args.author = series_info.author
             except Exception as exc:
-                logger.debug("Could not fetch Fenrirealm series info for cover: %s", exc)
+                logger.debug("Could not fetch Fenrir Realm series info for cover: %s", exc)
 
         if cover_url:
             try:
@@ -158,7 +158,7 @@ def scrape_fenrirealm(args: argparse.Namespace) -> None:
     console.print()
     console.print(
         Panel.fit(
-            f"[bold cyan]Fenrirealm Scraper[/bold cyan] — [italic]{args.title}[/italic]\n"
+            f"[bold cyan]Fenrir Realm Scraper[/bold cyan] — [italic]{args.title}[/italic]\n"
             f"[dim]Start chapter:[/dim] [yellow]{start_ch}[/yellow]  "
             f"[dim]|[/dim]  [dim]Max chapters:[/dim] [yellow]{max_ch if max_ch else 'unlimited'}[/yellow]  "
             f"[dim]|[/dim]  [dim]Output:[/dim] [yellow]{args.output_dir}[/yellow]",

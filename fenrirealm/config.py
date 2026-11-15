@@ -1,5 +1,5 @@
 """
-Configuration for Fenrirealm.com scraper.
+Configuration for Fenrir Realm.com scraper.
 Series: Absolute Regression
 """
 

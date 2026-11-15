@@ -1,5 +1,5 @@
 """
-Playwright-based fetcher for Fenrirealm.com.
+Playwright-based fetcher for Fenrir Realm.com.
 Uses a persistent browser profile to store verification state and cookies.
 """
 
@@ -60,7 +60,7 @@ def _get_context() -> BrowserContext:
 
 def fetch_chapter_html(url: str, timeout: int = 60_000) -> str:
     """
-    Navigate to a Fenrirealm chapter URL and return fully rendered HTML.
+    Navigate to a Fenrir Realm chapter URL and return fully rendered HTML.
     Waits for Cloudflare Turnstile to resolve and content to appear.
     """
     ctx = _get_context()
@@ -109,7 +109,7 @@ def fetch_chapter_html(url: str, timeout: int = 60_000) -> str:
 
 def fetch_series_page_html(url: str, timeout: int = 60_000) -> str:
     """
-    Navigate to a Fenrirealm series overview URL and return fully rendered HTML.
+    Navigate to a Fenrir Realm series overview URL and return fully rendered HTML.
     Waits for the series title heading to appear (or times out gracefully).
     Used for --info lookups on series pages (e.g. https://fenrirealm.com/series/<slug>).
     """

@@ -330,7 +330,7 @@ class TestScraper(unittest.TestCase):
             extract_novel_slug(url="https://novelight.net/book/ghost-story?tab=ch"),
             "ghost-story",
         )
-        # Fenrirealm URL
+        # Fenrir Realm URL
         self.assertEqual(
             extract_novel_slug(url="https://fenrirealm.com/series/absolute-regression/1"),
             "absolute-regression",
@@ -392,7 +392,7 @@ class TestScraper(unittest.TestCase):
             self.assertTrue(os.path.exists(os.path.join(expected_dir, "chapters")))
 
     def test_detect_source(self):
-        # Fenrirealm URLs
+        # Fenrir Realm URLs
         self.assertEqual(
             detect_source("https://fenrirealm.com/series/absolute-regression"),
             "fenrirealm",

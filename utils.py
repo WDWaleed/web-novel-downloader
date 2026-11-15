@@ -62,7 +62,7 @@ def extract_novel_slug(
     Priority order:
     1. URL slug — parsed from known URL patterns:
        - Novelight: ``/book/<slug>``
-       - Fenrirealm: ``/series/<slug>``
+       - Fenrir Realm: ``/series/<slug>``
     2. ``default_slug`` (already-known machine slug, e.g. from config)
     3. ``title`` slugified
     4. Fallback: ``"novel"``
@@ -75,7 +75,7 @@ def extract_novel_slug(
             slug = m_nl.group(1).strip()
             if not slug.isdigit():
                 return slug
-        # Fenrirealm: /series/<slug>
+        # Fenrir Realm: /series/<slug>
         m_fr = re.search(r"/series/([a-zA-Z0-9_-]+)", clean_url)
         if m_fr:
             return m_fr.group(1).strip()

@@ -1,2 +1,2 @@
-"""Fenrirealm scraper package."""
+"""Fenrir Realm scraper package."""
 

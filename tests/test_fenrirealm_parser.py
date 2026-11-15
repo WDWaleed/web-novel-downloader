@@ -1,5 +1,5 @@
 """
-Unit tests for the Fenrirealm HTML parser.
+Unit tests for the Fenrir Realm HTML parser.
 Uses captured fixture HTML — no network or browser needed.
 """
 
@@ -70,12 +70,12 @@ SAMPLE_SERIES_HTML = """
 SERIES_URL = "https://fenrirealm.com/series/absolute-regression"
 
 
-class TestFenrirealmParser(unittest.TestCase):
+class TestFenrir RealmParser(unittest.TestCase):
     def test_parse_chapter_extracts_title(self):
         ch = parse_fenrirealm_chapter(SAMPLE_CHAPTER_HTML, chapter_number=1, url="https://example.com/1")
         self.assertIsNotNone(ch)
         self.assertIn("Fall", ch.display_title)
-        # Issue 6: Fenrirealm has no volume concept — flat chapter with volume=0
+        # Issue 6: Fenrir Realm has no volume concept — flat chapter with volume=0
         self.assertEqual(ch.meta.volume, 0)
         self.assertEqual(ch.volume, 0)
         self.assertNotIn("Vol.", ch.display_title)
@@ -107,7 +107,7 @@ class TestFenrirealmParser(unittest.TestCase):
         self.assertFalse(is_end_of_series(SAMPLE_CHAPTER_HTML))
 
 
-class TestFenrirealmSeriesInfo(unittest.TestCase):
+class TestFenrir RealmSeriesInfo(unittest.TestCase):
     def setUp(self):
         self.info = parse_fenrirealm_series_info(SAMPLE_SERIES_HTML, url=SERIES_URL)
 
@@ -194,7 +194,7 @@ class TestFenrirealmSeriesInfo(unittest.TestCase):
         self.assertEqual(info.cover_url, "")
 
 
-class TestFenrirealmNormalizeURL(unittest.TestCase):
+class TestFenrir RealmNormalizeURL(unittest.TestCase):
     def test_full_url_passthrough(self):
         from fenrirealm.parser import _normalize_series_url
         url = "https://fenrirealm.com/series/absolute-regression"
